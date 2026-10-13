@@ -9,6 +9,7 @@ def main(
     lookup: Callable[[str], str] = importlib.metadata.version,
     python_version: Callable[[], str] = platform.python_version,
 ) -> int:
+    """Imprime la versión de Python y versiones o ausencias de librerías, advierte sobre SHA-1 con Paramiko >=5 y devuelve 0."""
     print(f"python: {python_version()}")
     paramiko_version = None
     for name in ("PyYAML", "Jinja2", "netmiko", "paramiko"):
