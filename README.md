@@ -126,12 +126,25 @@ de Netmiko se omite cuando la librería no está instalada: ese resultado signif
 verificación del entorno y lock reproducido en un entorno limpio. La verificación
 registrada con los extras `dev+ssh` obtuvo **11 pruebas aprobadas**, sin omisiones.
 
-| Directorio | Contenido actual |
+| Ruta | Contenido actual |
 |---|---|
-| `src/` | Paquete mínimo `intentfabric`, con un `__init__.py` documental. |
+| `src/intentfabric/` | Paquete base del framework. |
+| `src/intentfabric/domain/` | Capa reservada para modelos puros e inmutables. |
+| `src/intentfabric/application/` | Capa reservada para el pipeline, las fases y los puertos. |
+| `src/intentfabric/services/` | Paquetes plugin por servicio, sin implementaciones concretas todavía. |
+| `src/intentfabric/vendors/` | Paquetes plugin por vendor, sin implementaciones concretas todavía. |
+| `src/intentfabric/adapters/` | Capa reservada para implementaciones de los puertos. |
+| `src/intentfabric/bootstrap.py` | Raíz de composición reservada, únicamente con un docstring. |
 | `docs/` | Decisiones de arquitectura (ADR) y registros de implementación. |
 | `tests/` | Pruebas unitarias del entorno y directorio reservado para referencias golden. |
 | `scripts/` | Script de diagnóstico de versiones `check_env.py`. |
+
+La estructura hexagonal de [ADR-001](docs/adr/ADR-001.md) mantiene el dominio
+independiente de las demás capas y de terceros. La aplicación depende del dominio;
+los servicios, vendors y adaptadores dependen del núcleo. Los plugins permanecen
+aislados entre sí, las librerías externas se limitan a los adaptadores y la
+composición se concentra en `bootstrap.py`. La prueba `test_architecture.py`
+comprueba estos límites mediante análisis estático de imports.
 
 La generación de configuraciones, las validaciones de servicios y el despliegue
 pertenecen al alcance previsto y aún no están implementados. La conexión SSH real
