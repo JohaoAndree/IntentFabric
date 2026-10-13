@@ -11,6 +11,7 @@ import pytest
 
 @pytest.fixture
 def check_env() -> ModuleType:
+    """Carga scripts/check_env.py como módulo para probarlo de forma aislada."""
     path = Path(__file__).resolve().parents[2] / "scripts" / "check_env.py"
     spec = importlib.util.spec_from_file_location("check_env", path)
     assert spec is not None and spec.loader is not None
@@ -20,6 +21,7 @@ def check_env() -> ModuleType:
 
 
 def make_lookup(versions: dict[str, str]) -> Callable[[str], str]:
+    """Simula la consulta de versiones y lanza PackageNotFoundError si el paquete falta."""
     def lookup(name: str) -> str:
         try:
             return versions[name]
@@ -31,12 +33,14 @@ def make_lookup(versions: dict[str, str]) -> Callable[[str], str]:
 
 @pytest.fixture
 def versions() -> dict[str, str]:
+    """Devuelve versiones simuladas de las cuatro dependencias, todas instaladas."""
     return {"PyYAML": "6.0.2", "Jinja2": "3.1.6", "netmiko": "4.8.0", "paramiko": "4.0.0"}
 
 
 def test_all_installed(
     check_env: ModuleType, versions: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Imprime Python y las cuatro librerías en orden y devuelve 0."""
     result = check_env.main(make_lookup(versions), lambda: "3.14.2")
     assert result == 0
     assert capsys.readouterr().out == (
@@ -51,6 +55,7 @@ def test_all_installed(
 def test_netmiko_missing(
     check_env: ModuleType, versions: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Informa netmiko como no instalado sin alterar el código de salida."""
     del versions["netmiko"]
     assert check_env.main(make_lookup(versions), lambda: "3.14.2") == 0
     assert "netmiko: no instalado\n" in capsys.readouterr().out
@@ -63,6 +68,7 @@ def test_paramiko_warning(
     capsys: pytest.CaptureFixture[str],
     version: str,
 ) -> None:
+    """Emite la advertencia de SHA-1 con Paramiko 5 o superior."""
     versions["paramiko"] = version
     assert check_env.main(make_lookup(versions), lambda: "3.14.2") == 0
     lines = capsys.readouterr().out.splitlines()
@@ -80,6 +86,7 @@ def test_no_paramiko_warning(
     capsys: pytest.CaptureFixture[str],
     version: str,
 ) -> None:
+    """No emite advertencia con Paramiko anterior a 5 ni con versiones ilegibles."""
     versions["paramiko"] = version
     assert check_env.main(make_lookup(versions), lambda: "3.14.2") == 0
     output = capsys.readouterr().out
@@ -90,6 +97,7 @@ def test_no_paramiko_warning(
 def test_all_libraries_missing_python_first(
     check_env: ModuleType, capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Con todas las librerías ausentes, la versión de Python se imprime primero."""
     assert check_env.main(make_lookup({}), lambda: "3.13.0") == 0
     assert capsys.readouterr().out.splitlines() == [
         "python: 3.13.0",
@@ -103,6 +111,7 @@ def test_all_libraries_missing_python_first(
 def test_same_input_same_output(
     check_env: ModuleType, versions: dict[str, str], capsys: pytest.CaptureFixture[str]
 ) -> None:
+    """Una misma entrada produce exactamente la misma salida."""
     lookup = make_lookup(versions)
     assert check_env.main(lookup, lambda: "3.14.2") == 0
     first = capsys.readouterr().out
