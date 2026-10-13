@@ -5,7 +5,7 @@ IntentFabric: framework determinista de aprovisionamiento y validación de servi
 
 ## Roles
 - Implementación: ejecuta la Parte B del ADR indicado.
-- Revisión (cuando el prompt lo indique): verifica la implementación contra los criterios de aceptación del ADR y reporta hallazgos. Puede agregar pruebas en tests/. No modifica src/ ni los ADR. Informa por criterio: cumple / no cumple / no comprobable, con la evidencia (comando o archivo). Reporta como hallazgo todo comentario que incumpla la sección «Código y comentarios».
+- Revisión (cuando el prompt lo indique): verifica la implementación contra los criterios de aceptación del ADR y reporta hallazgos. Puede agregar pruebas en tests/. No modifica src/ ni los ADR. Informa por criterio: cumple / no cumple / no comprobable, con la evidencia (comando o archivo). Reporta como hallazgo todo comentario o docstring que incumpla la sección «Código y comentarios».
 
 ## Cómo trabajar
 - Implementa SOLO la Parte B del ADR indicado (docs/adr/). La Parte A es contexto y restricciones: no la reabras ni propongas alternativas durante la implementación.
@@ -72,13 +72,13 @@ Antes de editar: `git branch --show-current` y `git status`. Si estás en main, 
 ## Código y comentarios
 
 - Identificadores (módulos, clases, funciones, variables, pruebas) en inglés. Docstrings y comentarios en español, con acentos y UTF-8. Los términos técnicos estándar (VRF, pseudowire, commit) no se traducen.
-- Docstring en todo módulo, clase y función pública: una línea que diga qué hace. Amplía solo si el contrato no es evidente por el nombre y los type hints (precondiciones, excepciones, orden, determinismo). No repitas los tipos.
+- Docstring en todo módulo, clase y función pública, incluidas las funciones de prueba, los fixtures y los auxiliares de pruebas sin prefijo `_`: una línea que diga qué hace o qué comportamiento comprueba. Amplía solo si el contrato no es evidente por el nombre y los type hints (precondiciones, excepciones, orden, determinismo). No repitas los tipos ni parafrasees el nombre. Las funciones privadas (prefijo `_`) y las anidadas no lo requieren.
 - Comenta solo un porqué que el código no puede expresar: una restricción, una decisión no obvia, una referencia a un ADR o a un golden. Si basta renombrar o extraer una función, hazlo en lugar de comentar.
 - Sin comentarios que narren lo que el código ya dice, sin código comentado, sin historial de cambios (para eso está git), sin separadores decorativos ni comentarios de relleno.
 - Cada comentario ocupa de una a tres líneas. Si requiere más, va en el docstring del módulo o en un ADR.
 - Un comentario que afirme el comportamiento de un equipo cita el golden o el ADR que lo respalda. Sin respaldo, no se escribe.
 - Pendientes solo con referencia: `# TODO(adr-NNN): descripción`. Sin TODO anónimos.
-- En pruebas, el nombre describe el comportamiento; comenta solo las preparaciones no evidentes.
+- En pruebas, el docstring enuncia el comportamiento o contrato que se verifica (qué se garantiza, no cómo se prepara). Comenta solo las preparaciones no evidentes.
 
 ## Definición de hecho
 La tarea está completa solo si: los criterios de aceptación del ADR están cumplidos; las pruebas y verificaciones de determinismo pasan; los cambios propios están en commits ordinarios; el árbol está limpio (salvo cambios ajenos previos, que se conservan y se informan); no quedan bloqueos ni WIP de la tarea.
