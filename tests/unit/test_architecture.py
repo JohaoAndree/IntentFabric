@@ -74,6 +74,9 @@ def collect_violations(src_root: Path, package: str = "intentfabric") -> list[st
     )
     for path in sorted(package_root.rglob("*.py")):
         relative = path.relative_to(src_root)
+        if path.parent == package_root and path.stem not in ("__init__", "bootstrap", "cli"):
+            violations.append(f"{relative.as_posix()}: módulo no clasificado en ADR-001")
+            continue
         parts = relative.with_suffix("").parts
         is_package = parts[-1] == "__init__"
         module = ".".join(parts[:-1] if is_package else parts)
@@ -104,6 +107,20 @@ def test_real_tree_has_no_violations() -> None:
     """Comprueba que el código del proyecto respeta las capas del ADR."""
     src_root = Path(__file__).resolve().parents[2] / "src"
     assert collect_violations(src_root) == []
+
+
+@pytest.mark.parametrize(
+    "module_name", ["domain", "application", "services", "vendors", "adapters", "utils"]
+)
+def test_unclassified_root_modules_report_violation(
+    tmp_path: Path, module_name: str
+) -> None:
+    """Rechaza módulos raíz no reservados incluso si tienen el nombre de una capa."""
+    module_path = f"intentfabric/{module_name}.py"
+    _write_module(tmp_path, module_path, '"""Módulo sintético en la raíz."""\n')
+    assert collect_violations(tmp_path) == [
+        f"{module_path}: módulo no clasificado en ADR-001"
+    ]
 
 
 @pytest.mark.parametrize(
