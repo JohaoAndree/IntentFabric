@@ -4,7 +4,7 @@ from ipaddress import IPv4Address, IPv4Network
 from pathlib import Path
 
 from intentfabric.adapters.intent_file_loader import load_intent_mapping
-from intentfabric.bootstrap import build_intent_parser_registry
+from intentfabric.bootstrap import build_plugin_catalog
 from intentfabric.domain.derivations import derive_qos_rates, derive_wan_addresses
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 
@@ -12,7 +12,7 @@ from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, Tr
 def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
     """Produce la intención de referencia completa desde ambos formatos de ejemplo."""
     directory = Path(__file__).resolve().parents[2] / "examples" / "intents"
-    registry = build_intent_parser_registry()
+    catalog = build_plugin_catalog()
     json_raw = load_intent_mapping(directory / "dia_valid.json")
     yaml_raw = load_intent_mapping(directory / "dia_valid.yaml")
     expected = DiaIntent(
@@ -32,7 +32,7 @@ def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
         ),
     )
     assert json_raw == yaml_raw
-    assert registry.parse(json_raw) == registry.parse(yaml_raw) == expected
-    assert registry.parse(json_raw) == registry.parse(json_raw)
+    assert catalog.parse_intent(json_raw) == catalog.parse_intent(yaml_raw) == expected
+    assert catalog.parse_intent(json_raw) == catalog.parse_intent(json_raw)
     assert derive_wan_addresses(expected.wan_network).pe_address == IPv4Address("10.255.0.1")
     assert derive_qos_rates(expected.bandwidth_mbps).cir_kbps == 5376
