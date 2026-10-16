@@ -153,6 +153,51 @@ y la evaluación experimental siguen pendientes de verificación en laboratorio.
 La decisión técnica y su evidencia se encuentran en [ADR-002](docs/adr/ADR-002.md)
 y en su [walkthrough de implementación](docs/walkthroughs/ADR-002.md).
 
+## Extensión: agregar un vendor o un servicio
+
+El contrato de [ADR-004](docs/adr/ADR-004.md) separa las declaraciones de cada
+plugin de la lectura de sus recursos. El registro se realiza en `bootstrap.py`;
+los plugins nuevos utilizan los contratos existentes del núcleo.
+
+Para incorporar un vendor:
+
+1. Crea `src/intentfabric/vendors/<id>/__init__.py` y expón una
+   `VENDOR_DEFINITION` construida con `VendorDefinition`. Usa un identificador
+   de 2 a 32 caracteres que empiece por una letra minúscula y continúe con letras
+   minúsculas, dígitos o guiones bajos.
+2. Declara las combinaciones que soportará mediante claves `TemplateKey` y rutas
+   relativas al paquete del vendor. Añade los archivos correspondientes bajo
+   `templates/<servicio en minúsculas>/<operación>/<rol>.j2`. Las operaciones son
+   `provision` y `teardown`; los roles, `access`, `transit` y `pe`. Se utiliza la
+   variante `default`; la selección de otras variantes queda pendiente del
+   laboratorio y de su ADR.
+3. Importa el paquete en `bootstrap.py` e incorpóralo a `VENDOR_PACKAGES`.
+   El catálogo registra su definición y proporciona sus identificadores al parser
+   DIA; no hace falta mantener otra lista de vendors conocidos.
+4. Ejecuta las pruebas de contrato y después la suite completa desde la raíz:
+
+   ```powershell
+   python -m pytest -q tests/contract
+   python -m pytest -q
+   ```
+
+Para incorporar un servicio, crea `src/intentfabric/services/<service>/` con un
+parser que cumpla `ServiceIntentParser`: declara su `service_type` y convierte la
+entrada estructurada en una intención de dominio. Regístralo mediante
+`catalog.register_service(...)` en `build_plugin_catalog()`, después de registrar
+los vendors. Añade las declaraciones y plantillas del servicio en cada vendor que
+deba soportarlo y ejecuta las mismas verificaciones.
+
+`build_verified_catalog()` comprueba los servicios declarados y la lectura de las
+plantillas antes de devolver el catálogo. Los registros duplicados se rechazan;
+las combinaciones sin plantilla fallan con `UnsupportedCombinationError` al
+resolverlas. Las pruebas de contrato también detectan rutas fuera de la convención
+y archivos `.j2` que no figuran en la definición.
+
+Actualmente Cisco y Huawei están registrados con mapas de plantillas vacíos.
+Su contenido de red y las referencias golden se incorporarán en ADR-006;
+ADR-004 no implementa renderizado ni conexión con equipos.
+
 ## Gestión de lockfile
 
 La actualización de `requirements.lock` constituye un cambio controlado de
