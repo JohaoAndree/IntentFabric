@@ -169,3 +169,112 @@ def test_parser_leaves_semantic_rules_to_adr_005(valid_raw: dict[str, Any]) -> N
     assert intent.bandwidth_mbps == 0
     assert intent.description == ""
     assert intent.wan_network.prefixlen == 24
+
+
+@pytest.mark.parametrize(
+    "field", ["schema_version", "service_type", "description", "vlan_id", "vrf_name",
+              "wan_network", "lan_network", "bandwidth_mbps", "qos", "path"],
+)
+def test_every_root_field_is_required(valid_raw: dict[str, Any], field: str) -> None:
+    """Exige todos los campos raíz del esquema aprobado."""
+    del valid_raw[field]
+    with pytest.raises(IntentParseError) as error:
+        _parser().parse(valid_raw)
+    assert str(error.value) == f"{field}: campo faltante"
+
+
+@pytest.mark.parametrize(
+    ("index", "field"),
+    [(0, "vendor"), (0, "management_ip"), (0, "customer_port"), (0, "uplink_interface"),
+     (1, "role"), (1, "management_ip"), (1, "access_facing_interface"),
+     (1, "pe_facing_interface"), (2, "role"), (2, "vendor"), (2, "management_ip")],
+)
+def test_remaining_hop_fields_are_required(
+    valid_raw: dict[str, Any], index: int, field: str,
+) -> None:
+    """Exige los campos de salto restantes con su índice y nombre en el error."""
+    del valid_raw["path"][index][field]
+    with pytest.raises(IntentParseError) as error:
+        _parser().parse(valid_raw)
+    assert str(error.value) == f"path[{index}].{field}: campo faltante"
+
+
+@pytest.mark.parametrize(
+    ("location", "value", "message"),
+    [(("vlan_id",), "3001", "vlan_id: se requiere un entero"),
+     (("vlan_id",), 3001.0, "vlan_id: se requiere un entero"),
+     (("vrf_name",), None, "vrf_name: se requiere texto"),
+     (("service_type",), None, "service_type: se requiere texto"),
+     (("wan_network",), 1, "wan_network: se requiere texto"),
+     (("lan_network",), [], "lan_network: se requiere texto"),
+     (("lan_network",), "invalid", "lan_network: red IPv4 inválida o con bits de host activos"),
+     (("lan_network",), "2001:db8::/64", "lan_network: se requiere una red IPv4"),
+     (("path", 0, "uplink_interface"), None, "path[0].uplink_interface: se requiere texto"),
+     (("path", 1, "access_facing_interface"), 1, "path[1].access_facing_interface: se requiere texto"),
+     (("path", 1, "pe_facing_interface"), False, "path[1].pe_facing_interface: se requiere texto"),
+     (("path", 0, "vendor"), None, "path[0].vendor: se requiere texto"),
+     (("path", 0, "extra"), 1, "path[0].extra: campo desconocido"),
+     (("path", 2, "extra"), 1, "path[2].extra: campo desconocido")],
+)
+def test_remaining_field_types_are_strict(
+    valid_raw: dict[str, Any], location: tuple[str | int, ...], value: Any, message: str,
+) -> None:
+    """Rechaza coerciones y campos extra en los contratos restantes del esquema."""
+    _replace(valid_raw, location, value)
+    with pytest.raises(IntentParseError) as error:
+        _parser().parse(valid_raw)
+    assert str(error.value) == message
+
+
+@pytest.mark.parametrize("raw", [None, [], "DIA", 1])
+def test_parser_requires_root_mapping(raw: Any) -> None:
+    """Rechaza entradas raíz que no son objetos con campos."""
+    with pytest.raises(IntentParseError) as error:
+        _parser().parse(raw)
+    assert str(error.value) == "$: se requiere un objeto"
+
+
+@pytest.mark.parametrize("index", [0, 1, 2])
+def test_each_hop_requires_registered_vendor(valid_raw: dict[str, Any], index: int) -> None:
+    """Aplica el conjunto de vendors conocidos a todos los roles de la ruta."""
+    valid_raw["path"][index]["vendor"] = "other"
+    with pytest.raises(IntentParseError) as error:
+        _parser().parse(valid_raw)
+    assert str(error.value) == (
+        f"path[{index}].vendor: vendor no registrado 'other'; registrados: cisco, huawei"
+    )
+
+
+def _reverse_keys(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {key: _reverse_keys(item) for key, item in reversed(value.items())}
+    if isinstance(value, list):
+        return [_reverse_keys(item) for item in value]
+    return value
+
+
+def test_key_order_does_not_change_intent(valid_raw: dict[str, Any]) -> None:
+    """Produce la misma intención al invertir las claves de todos los objetos."""
+    assert _parser().parse(valid_raw) == _parser().parse(_reverse_keys(valid_raw))
+
+
+@pytest.mark.parametrize("invalid_kind", ["unknown", "missing", "qos_unknown"])
+def test_key_order_does_not_change_diagnostic(
+    valid_raw: dict[str, Any], invalid_kind: str,
+) -> None:
+    """Selecciona el mismo primer error ante claves equivalentes en distinto orden."""
+    if invalid_kind == "unknown":
+        valid_raw.update(z_extra=1, a_extra=1)
+        expected = "a_extra: campo desconocido"
+    elif invalid_kind == "missing":
+        del valid_raw["vlan_id"], valid_raw["description"]
+        expected = "description: campo faltante"
+    else:
+        valid_raw["qos"].update(pir=1, cir=1)
+        expected = "qos.cir: campo desconocido"
+    messages = []
+    for raw in [valid_raw, _reverse_keys(valid_raw)]:
+        with pytest.raises(IntentParseError) as error:
+            _parser().parse(raw)
+        messages.append(str(error.value))
+    assert messages == [expected, expected]
