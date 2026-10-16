@@ -49,3 +49,13 @@ def test_vendor_snapshots_mapping_and_prevents_mutation() -> None:
         definition.templates[key] = "changed.j2"
     with pytest.raises(FrozenInstanceError):
         definition.vendor_id = "other"
+
+
+@pytest.mark.parametrize(
+    "resource_path", ["access.j2", "templates/dia/provision/access.j2",
+                      "templates/dia/teardown/pe.lab.j2"],
+)
+def test_vendor_preserves_valid_relative_resource_path(resource_path: str) -> None:
+    """Conserva rutas relativas válidas sin añadir una convención al modelo de dominio."""
+    definition = VendorDefinition("acme", {_key(): resource_path})
+    assert definition.templates[_key()] == resource_path

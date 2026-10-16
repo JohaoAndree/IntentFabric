@@ -1,10 +1,12 @@
 """Verifica el registro, despacho y consistencia de las combinaciones de plantilla."""
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 import pytest
 
+from intentfabric.adapters.packaged_template_source import PackagedTemplateSource
 from intentfabric.application.plugin_catalog import PluginCatalog
 from intentfabric.domain.errors import (
     IntentParseError, PluginConsistencyError, PluginRegistrationError,
@@ -151,3 +153,55 @@ def test_catalog_instances_and_identifier_snapshots_are_isolated() -> None:
     catalog.register_service(_Parser())
     assert vendors == services == frozenset()
     assert PluginCatalog().vendor_ids() == PluginCatalog().service_types() == frozenset()
+
+
+@pytest.mark.parametrize(
+    "key", [TemplateKey("LAB", Operation.PROVISION, NodeRole.ACCESS),
+            TemplateKey("DIA", Operation.TEARDOWN, NodeRole.ACCESS),
+            TemplateKey("DIA", Operation.PROVISION, NodeRole.TRANSIT),
+            TemplateKey("DIA", Operation.PROVISION, NodeRole.PROVIDER_EDGE),
+            TemplateKey("DIA", Operation.PROVISION, NodeRole.ACCESS, "lab")],
+)
+def test_support_depends_on_every_template_key_field(key: TemplateKey) -> None:
+    """Distingue servicio, operación, rol y variante al resolver combinaciones."""
+    catalog = PluginCatalog()
+    catalog.register_vendor(VendorDefinition("acme", {_key(): "access.j2"}))
+    assert not catalog.supports("acme", key)
+    with pytest.raises(UnsupportedCombinationError):
+        catalog.resolve_template("acme", key)
+
+
+def test_readable_template_still_requires_registered_service() -> None:
+    """Detecta un servicio inexistente aunque su plantilla sea legible y no vacía."""
+    catalog = PluginCatalog()
+    catalog.register_vendor(VendorDefinition("acme", {_key("LAB"): "access.j2"}))
+    assert catalog.verify_consistency(_Source({"access.j2": "contenido"})) == (
+        "acme/LAB/provision/access/default: servicio no registrado",
+    )
+
+
+def test_template_declaration_order_does_not_change_diagnostics() -> None:
+    """Mantiene los mensajes al invertir el orden de plantillas de un mismo vendor."""
+    declarations = [(_key(role=NodeRole.TRANSIT), "transit.j2"), (_key(), "access.j2")]
+    source = _Source({"transit.j2": " ", "access.j2": ""})
+    results = []
+    for order in [declarations, list(reversed(declarations))]:
+        catalog = PluginCatalog()
+        catalog.register_vendor(VendorDefinition("acme", dict(order)))
+        catalog.register_service(_Parser())
+        results.append(catalog.verify_consistency(source))
+    assert results[0] == results[1] == (
+        "acme/DIA/provision/access/default: plantilla vacía 'access.j2'",
+        "acme/DIA/provision/transit/default: plantilla vacía 'transit.j2'",
+    )
+
+
+def test_invalid_utf8_resource_fails_consistency(tmp_path: Path) -> None:
+    """Informa como ilegible una plantilla real que no contiene UTF-8 válido."""
+    (tmp_path / "access.j2").write_bytes(b"\xff")
+    catalog = PluginCatalog()
+    catalog.register_vendor(VendorDefinition("acme", {_key(): "access.j2"}))
+    catalog.register_service(_Parser())
+    with pytest.raises(PluginConsistencyError) as error:
+        catalog.assert_consistent(PackagedTemplateSource({"acme": tmp_path}))
+    assert str(error.value) == "acme/DIA/provision/access/default: plantilla ilegible 'access.j2'"
