@@ -1,12 +1,15 @@
 """Comprueba la composición del registro DIA y sus vendors conocidos."""
 
+from types import ModuleType
 from typing import Any
 
 import pytest
 
-from intentfabric.bootstrap import build_intent_parser_registry
+from intentfabric import bootstrap
 from intentfabric.domain.errors import IntentParseError
 from intentfabric.domain.intent import DiaIntent
+from intentfabric.domain.vendor_definition import VendorDefinition
+from intentfabric.vendors import cisco
 
 
 def _raw(vendor: str = "huawei") -> dict[str, Any]:
@@ -26,28 +29,35 @@ def _raw(vendor: str = "huawei") -> dict[str, Any]:
 
 def test_bootstrap_registers_dia_with_default_vendors() -> None:
     """Interpreta una ruta mixta con Cisco y Huawei registrados por defecto."""
-    intent = build_intent_parser_registry().parse(_raw())
+    intent = bootstrap.build_plugin_catalog().parse_intent(_raw())
     assert isinstance(intent, DiaIntent)
     assert intent.access.vendor == "huawei"
     assert intent.provider_edge.vendor == "cisco"
 
 
-def test_bootstrap_accepts_new_vendor_without_core_changes() -> None:
+def test_bootstrap_accepts_new_vendor_without_core_changes(monkeypatch: pytest.MonkeyPatch) -> None:
     """Admite otro vendor al proporcionarlo a la raíz de composición."""
-    registry = build_intent_parser_registry(frozenset({"lab", "cisco"}))
-    assert registry.parse(_raw("lab")).access.vendor == "lab"
+    package = ModuleType("lab_vendor")
+    package.VENDOR_DEFINITION = VendorDefinition("lab", {})
+    monkeypatch.setattr(bootstrap, "VENDOR_PACKAGES", (package, cisco))
+    catalog = bootstrap.build_plugin_catalog()
+    assert catalog.parse_intent(_raw("lab")).access.vendor == "lab"
     with pytest.raises(IntentParseError, match=r"path\[0\].vendor: vendor no registrado"):
-        registry.parse(_raw())
+        catalog.parse_intent(_raw())
 
 
-def test_bootstrap_does_not_share_custom_vendors() -> None:
+def test_bootstrap_does_not_share_custom_vendors(monkeypatch: pytest.MonkeyPatch) -> None:
     """Aísla los vendors personalizados de los registros construidos después."""
-    build_intent_parser_registry(frozenset({"lab"}))
-    assert build_intent_parser_registry().parse(_raw()).access.vendor == "huawei"
+    package = ModuleType("lab_vendor")
+    package.VENDOR_DEFINITION = VendorDefinition("lab", {})
+    with monkeypatch.context() as context:
+        context.setattr(bootstrap, "VENDOR_PACKAGES", (package,))
+        assert bootstrap.build_plugin_catalog().vendor_ids() == frozenset({"lab"})
+    assert bootstrap.build_plugin_catalog().parse_intent(_raw()).access.vendor == "huawei"
 
 
 def test_bootstrap_keeps_unknown_service_diagnostic() -> None:
     """Informa DIA como registrado cuando se solicita un servicio desconocido."""
     with pytest.raises(IntentParseError) as error:
-        build_intent_parser_registry().parse({"service_type": "OTHER"})
+        bootstrap.build_plugin_catalog().parse_intent({"service_type": "OTHER"})
     assert str(error.value) == "service_type: servicio desconocido 'OTHER'; registrados: DIA"
