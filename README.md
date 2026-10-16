@@ -7,8 +7,9 @@ IOS-XE y Huawei VRP, con soporte para servicios DIA, L3VPN y L2VPN.
 
 El proyecto se desarrolla como trabajo de grado de Ingeniería de Sistemas en la
 Universidad de Lima, con enfoque en ingeniería de software aplicada a la
-automatización de redes. La fase actual corresponde a la infraestructura del
-paquete y sus dependencias, completada en ADR-002.
+automatización de redes. El estado actual comprende la arquitectura y el entorno
+del paquete, el modelo y parsing de intenciones DIA, y el contrato de extensión
+por vendor y servicio implementado en ADR-004.
 
 ## Descripción general
 
@@ -24,9 +25,11 @@ físico. Las mejoras respecto del aprovisionamiento manual se mantienen como
 hipótesis hasta disponer de mediciones.
 
 Los servicios contemplados son acceso a Internet dedicado (DIA), VPN de capa 3
-(L3VPN) y enlaces de capa 2 punto a punto (L2VPN). Su implementación funcional y
-la verificación de compatibilidad con los equipos se realizarán en etapas
-posteriores.
+(L3VPN) y enlaces de capa 2 punto a punto (L2VPN). Actualmente se puede cargar
+una intención DIA v1 desde JSON o YAML, validar su estructura y convertirla en
+modelos inmutables. También existen derivaciones puras de direccionamiento WAN,
+subinterfaces y tasas QoS. Las reglas semánticas del servicio, el aprovisionamiento
+en equipos y los parsers de intenciones L3VPN y L2VPN quedan pendientes.
 
 ## Requisitos del sistema
 
@@ -102,7 +105,7 @@ de instalación se registran en la sección 10 de [ADR-002](docs/adr/ADR-002.md)
 
 ## Verificación
 
-La comprobación del entorno y la ejecución de las pruebas unitarias se realizan
+La comprobación del entorno y la ejecución de la suite de pruebas se realizan
 con los siguientes comandos:
 
 ```powershell
@@ -115,28 +118,40 @@ en ese orden. Una librería ausente se muestra como `no instalado`; el código d
 salida es 0 incluso si faltan librerías. Con Paramiko 5 o superior se emite una
 advertencia sobre mecanismos SSH retirados y compatibilidad con el laboratorio.
 
-Las pruebas cubren las importaciones, el contrato de salida del script, las
-ausencias de dependencias, la advertencia de Paramiko y el determinismo. El test
-de Netmiko se omite cuando la librería no está instalada: ese resultado significa
-**no comprobado**. La importación correcta no demuestra una conexión SSH real.
+Las pruebas cubren los límites de arquitectura, el entorno, los modelos y
+derivaciones, el parsing DIA, la carga JSON/YAML, el catálogo de plugins y la
+lectura de recursos. Incluyen comprobaciones de determinismo y contratos de
+extensión con vendors sintéticos. La última verificación registrada de ADR-004
+obtuvo **338 pruebas aprobadas**, incluidas 11 pruebas de contrato.
+
+El test de Netmiko se omite cuando la librería no está instalada: ese resultado
+significa **no comprobado**. La importación correcta no demuestra una conexión
+SSH real.
 
 ## Estado del proyecto y arquitectura
 
-**ADR-002 completado:** paquete `intentfabric` 0.1.0, metadatos, dependencias,
-verificación del entorno y lock reproducido en un entorno limpio. La verificación
-registrada con los extras `dev+ssh` obtuvo **11 pruebas aprobadas**, sin omisiones.
+El paquete `intentfabric` mantiene la versión 0.1.0. La implementación de esta
+rama comprende los siguientes ADR:
+
+| ADR | Capacidad implementada | Evidencia |
+|---|---|---|
+| [ADR-001](docs/adr/ADR-001.md) | Estructura hexagonal y comprobación estática de dependencias entre capas y plugins. | [Walkthrough](docs/walkthroughs/ADR-001.md) |
+| [ADR-002](docs/adr/ADR-002.md) | Metadatos, dependencias, diagnóstico del entorno y lock reproducido en un entorno limpio. | [Walkthrough](docs/walkthroughs/ADR-002.md) |
+| [ADR-003](docs/adr/ADR-003.md) | Intención DIA v1, parsing JSON/YAML, modelos inmutables y derivaciones puras. | [Walkthrough](docs/walkthroughs/ADR-003.md) |
+| [ADR-004](docs/adr/ADR-004.md) | Definiciones de vendors, claves de plantilla, catálogo, fuente de recursos y contratos de extensión. | [Walkthrough](docs/walkthroughs/ADR-004.md) |
 
 | Ruta | Contenido actual |
 |---|---|
 | `src/intentfabric/` | Paquete base del framework. |
-| `src/intentfabric/domain/` | Capa reservada para modelos puros e inmutables. |
-| `src/intentfabric/application/` | Capa reservada para el pipeline, las fases y los puertos. |
-| `src/intentfabric/services/` | Paquetes plugin por servicio, sin implementaciones concretas todavía. |
-| `src/intentfabric/vendors/` | Paquetes plugin por vendor, sin implementaciones concretas todavía. |
-| `src/intentfabric/adapters/` | Capa reservada para implementaciones de los puertos. |
-| `src/intentfabric/bootstrap.py` | Raíz de composición reservada, únicamente con un docstring. |
+| `src/intentfabric/domain/` | Modelos de intención, derivaciones, claves de plantilla, definiciones inmutables de vendors y errores. |
+| `src/intentfabric/application/` | Contratos de parsing y lectura de plantillas, registro de parsers y catálogo de plugins. |
+| `src/intentfabric/services/` | Plugin DIA con validación estructural y conversión de la intención v1. |
+| `src/intentfabric/vendors/` | Definiciones de Cisco y Huawei con mapas de plantillas vacíos. |
+| `src/intentfabric/adapters/` | Carga de archivos JSON/YAML y lectura UTF-8 de recursos de plantilla. |
+| `src/intentfabric/bootstrap.py` | Registro explícito de paquetes, composición del catálogo y verificación de consistencia. |
 | `docs/` | Decisiones de arquitectura (ADR) y registros de implementación. |
-| `tests/` | Pruebas unitarias del entorno y directorio reservado para referencias golden. |
+| `examples/intents/` | Ejemplos equivalentes de intención DIA en JSON y YAML. |
+| `tests/` | Pruebas unitarias, de arquitectura y de contrato; referencias golden pendientes de ADR-006. |
 | `scripts/` | Script de diagnóstico de versiones `check_env.py`. |
 
 La estructura hexagonal de [ADR-001](docs/adr/ADR-001.md) mantiene el dominio
@@ -146,12 +161,16 @@ aislados entre sí, las librerías externas se limitan a los adaptadores y la
 composición se concentra en `bootstrap.py`. La prueba `test_architecture.py`
 comprueba estos límites mediante análisis estático de imports.
 
-La generación de configuraciones, las validaciones de servicios y el despliegue
-pertenecen al alcance previsto y aún no están implementados. La conexión SSH real
-y la evaluación experimental siguen pendientes de verificación en laboratorio.
+El catálogo conoce los vendors `cisco` y `huawei` y el servicio `DIA`. La
+construcción verificada comprueba los servicios y los recursos declarados;
+como los mapas reales de plantillas están vacíos, todavía no hay combinaciones
+vendor × servicio × operación × rol disponibles para generar configuraciones.
 
-La decisión técnica y su evidencia se encuentran en [ADR-002](docs/adr/ADR-002.md)
-y en su [walkthrough de implementación](docs/walkthroughs/ADR-002.md).
+Las reglas semánticas (ADR-005), las plantillas y golden (ADR-006) y el inventario
+(ADR-007) pertenecen a etapas posteriores. El motor de renderizado, la CLI,
+el despliegue SSH y la post-validación de estado tampoco están implementados.
+La compatibilidad con equipos reales y la evaluación experimental siguen
+pendientes de verificación en laboratorio.
 
 ## Extensión: agregar un vendor o un servicio
 
