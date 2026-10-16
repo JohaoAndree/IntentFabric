@@ -1,0 +1,33 @@
+{
+  "schema_version": "1",
+  "service_type": "DIA",
+  "description": "LAB#INTE#0001",
+  "vlan_id": 3001,
+  "vrf_name": "LAB-INTERNET",
+  "wan_network": "10.255.0.0/30",
+  "lan_network": "203.0.113.0/29",
+  "bandwidth_mbps": 50,
+  "qos": { "policy_name": "LAB_50MB_PARENT" },
+  "path": [
+    {
+      "role": "access",
+      "vendor": "huawei",
+      "management_ip": "192.0.2.11",
+      "customer_port": "GigabitEthernet0/0/1",
+      "uplink_interface": "GigabitEthernet0/0/24"
+    },
+    {
+      "role": "transit",
+      "vendor": "cisco",
+      "management_ip": "192.0.2.12",
+      "access_facing_interface": "GigabitEthernet1/0/23",
+      "pe_facing_interface": "GigabitEthernet1/0/24"
+    },
+    {
+      "role": "pe",
+      "vendor": "huawei",
+      "management_ip": "192.0.2.21",
+      "parent_interface": "GigabitEthernet0/0/1"
+    }
+  ]
+}
