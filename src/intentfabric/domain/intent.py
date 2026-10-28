@@ -25,12 +25,12 @@ class AccessHop:
 
 @dataclass(frozen=True)
 class TransitHop:
-    """Identifica un tránsito y sus interfaces hacia los extremos de la ruta."""
+    """Identifica un transito y sus interfaces aguas abajo y aguas arriba."""
 
     vendor: str
     management_ip: IPv4Address
-    access_facing_interface: str
-    pe_facing_interface: str
+    downstream_interface: str
+    upstream_interface: str
 
 
 @dataclass(frozen=True)

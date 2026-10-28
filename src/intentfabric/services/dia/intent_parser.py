@@ -118,7 +118,7 @@ class DiaIntentParser:
         ))
         transits = tuple(
             TransitHop(**self._hop(
-                hop, index, "transit", ("access_facing_interface", "pe_facing_interface"),
+                hop, index, "transit", ("downstream_interface", "upstream_interface"),
             ))
             for index, hop in enumerate(path[1:-1], start=1)
         )

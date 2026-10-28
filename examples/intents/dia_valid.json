@@ -20,8 +20,8 @@
       "role": "transit",
       "vendor": "cisco",
       "management_ip": "192.0.2.12",
-      "access_facing_interface": "GigabitEthernet1/0/23",
-      "pe_facing_interface": "GigabitEthernet1/0/24"
+      "downstream_interface": "GigabitEthernet1/0/23",
+      "upstream_interface": "GigabitEthernet1/0/24"
     },
     {
       "role": "pe",
