@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
 from typing import ClassVar
 
+from intentfabric.domain.template_key import NodeRole
+
 
 @dataclass(frozen=True)
 class ServiceIntent:
@@ -22,6 +24,11 @@ class AccessHop:
     customer_port: str
     uplink_interface: str
 
+    @property
+    def role(self) -> NodeRole:
+        """Identifica el salto como acceso."""
+        return NodeRole.ACCESS
+
 
 @dataclass(frozen=True)
 class TransitHop:
@@ -32,6 +39,11 @@ class TransitHop:
     downstream_interface: str
     upstream_interface: str
 
+    @property
+    def role(self) -> NodeRole:
+        """Identifica el salto como transito."""
+        return NodeRole.TRANSIT
+
 
 @dataclass(frozen=True)
 class ProviderEdgeHop:
@@ -40,6 +52,11 @@ class ProviderEdgeHop:
     vendor: str
     management_ip: IPv4Address
     parent_interface: str
+
+    @property
+    def role(self) -> NodeRole:
+        """Identifica el salto como PE."""
+        return NodeRole.PROVIDER_EDGE
 
 
 @dataclass(frozen=True)
@@ -56,3 +73,8 @@ class DiaIntent(ServiceIntent):
     access: AccessHop
     transits: tuple[TransitHop, ...]
     provider_edge: ProviderEdgeHop
+
+    @property
+    def hops(self) -> tuple[AccessHop | TransitHop | ProviderEdgeHop, ...]:
+        """Devuelve la ruta en orden de acceso, transitos y PE."""
+        return (self.access, *self.transits, self.provider_edge)

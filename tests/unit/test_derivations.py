@@ -6,7 +6,7 @@ from ipaddress import IPv4Address, IPv4Network
 import pytest
 
 from intentfabric.domain.derivations import (
-    QosRates, WanAddresses, derive_qos_rates, derive_subinterface_name,
+    BandwidthRates, QosRates, WanAddresses, derive_bandwidth_rates, derive_qos_rates, derive_subinterface_name,
     derive_wan_addresses,
 )
 
@@ -37,13 +37,17 @@ def test_subinterface_uses_parent_and_vlan() -> None:
 
 @pytest.mark.parametrize(
     ("bandwidth", "expected"),
-    [(50, QosRates(5376, 53760)), (100, QosRates(10752, 107520)),
-     (1, QosRates(108, 1075)), (2, QosRates(215, 2150)),
-     (3, QosRates(323, 3226)), (8, QosRates(860, 8602))],
+    [(50, QosRates(50_000, 50_000)), (100, QosRates(100_000, 100_000)),
+     (1, QosRates(1_000, 1_000)), (2, QosRates(2_000, 2_000)),
+     (3, QosRates(3_000, 3_000)), (8, QosRates(8_000, 8_000)),
+     (10, QosRates(10_000, 10_000))],
 )
-def test_qos_rates_follow_integer_rounding(bandwidth: int, expected: QosRates) -> None:
-    """Redondea resultados fraccionarios y mitades de cir con la fórmula confirmada."""
+def test_qos_rates_use_decimal_guaranteed_bandwidth(bandwidth: int, expected: QosRates) -> None:
+    """Garantiza CIR igual a PIR y conversiones exactas en base decimal."""
     assert derive_qos_rates(bandwidth) == derive_qos_rates(bandwidth) == expected
+    assert expected.cir_bps == expected.pir_bps == bandwidth * 1_000_000
+    assert derive_bandwidth_rates(bandwidth) == expected
+    assert BandwidthRates is QosRates
 
 
 @pytest.mark.parametrize("bandwidth", [0, -1, 1.5, 50.0, True, False, "50", None])

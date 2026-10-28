@@ -9,6 +9,7 @@ from intentfabric.domain.errors import IntentParseError
 from intentfabric.domain.intent import (
     AccessHop, DiaIntent, ProviderEdgeHop, ServiceIntent, TransitHop,
 )
+from intentfabric.domain.template_key import NodeRole
 
 
 def _intent() -> DiaIntent:
@@ -54,3 +55,15 @@ def test_parse_error_preserves_field_path() -> None:
     assert str(IntentParseError("path[1].vendor: vendor desconocido")) == (
         "path[1].vendor: vendor desconocido"
     )
+
+
+def test_navigation_preserves_canonical_path_and_roles() -> None:
+    """Expone acceso, transitos y PE sin agregar campos ni alterar el orden."""
+    intent = _intent()
+    assert intent.hops == (intent.access, *intent.transits, intent.provider_edge)
+    assert tuple(hop.role for hop in intent.hops) == (
+        NodeRole.ACCESS, NodeRole.TRANSIT, NodeRole.PROVIDER_EDGE,
+    )
+    assert "hops" not in {field.name for field in fields(intent)}
+    for hop in intent.hops:
+        assert "role" not in {field.name for field in fields(hop)}
