@@ -579,3 +579,27 @@ def test_require_valid_rejects_only_reports_with_errors() -> None:
     assert service.require_valid(ValidationReport("LAB-001", "DIA", ())) is None
     warnings = (_issue(severity=ValidationSeverity.WARNING),)
     assert service.require_valid(ValidationReport("LAB-001", "DIA", warnings)) is None
+
+
+def test_static_validation_reports_the_full_criterion_two_combination() -> None:
+    """Reporta en una sola ejecucion los seis defectos del criterio 2 con identidad por description."""
+    intent = _dia_intent()
+    intent = replace(
+        intent, vlan_id=1, bandwidth_mbps=1001,
+        transits=(
+            replace(intent.transits[0], management_ip=intent.access.management_ip),
+            replace(intent.transits[0], vendor="unknown", management_ip=IPv4Address("198.51.100.1")),
+        ),
+    )
+    missing_key = TemplateKey("DIA", Operation.TEARDOWN, NodeRole.TRANSIT)
+    checker = _PreFlightChecker()
+    report = PreValidationService(_supported_catalog(omitted=(missing_key,)), checker).validate(intent)
+    assert [issue.code for issue in report.issues] == [
+        "BANDWIDTH_EXCEEDS_PORT_CAPACITY", "DUPLICATE_MANAGEMENT_IP",
+        "MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "MISSING_TEMPLATE_KEY",
+        "RESERVED_CISCO_VLAN", "UNSUPPORTED_VENDOR",
+    ]
+    assert report.service_id == intent.description
+    assert not report.is_valid
+    assert not report.preflight_executed
+    assert checker.call_count == 0
