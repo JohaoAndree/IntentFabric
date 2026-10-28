@@ -1,0 +1,285 @@
+"""Garantiza renderizado estricto, contextos aislados y artefactos reproducibles."""
+
+from collections.abc import Mapping
+from dataclasses import FrozenInstanceError, replace
+from ipaddress import IPv4Address, IPv4Network
+import json
+
+import jinja2
+import pytest
+
+from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
+from intentfabric.application.plugin_catalog import PluginCatalog
+from intentfabric.domain.errors import (
+    PluginRegistrationError, TemplateNotFoundError, TemplateRenderError,
+    UnsupportedCombinationError,
+)
+from intentfabric.domain.generation import (
+    NodeConfigurationArtifact, ServiceGenerationPlan, compute_sha256, normalize_rendered_config,
+)
+from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
+from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
+from intentfabric.domain.vendor_definition import VendorDefinition
+from intentfabric.services.dia.context_builder import build_dia_hop_context
+from intentfabric.services.dia.intent_parser import DiaIntentParser
+from intentfabric.vendors.cisco import build_cisco_qos_context
+from intentfabric.vendors.huawei import build_huawei_qos_context
+
+
+def _intent(vendor_id: str = "cisco") -> DiaIntent:
+    return DiaIntent(
+        description="LAB#INTE#0001", vlan_id=3001, vrf_name="LAB-INTERNET",
+        wan_network=IPv4Network("10.255.0.0/30"),
+        lan_network=IPv4Network("203.0.113.0/29"), bandwidth_mbps=100,
+        qos_policy_name="LAB_100MB_PARENT",
+        access=AccessHop(vendor_id, IPv4Address("192.0.2.11"), "client", "uplink"),
+        transits=(TransitHop(vendor_id, IPv4Address("192.0.2.12"), "down", "up"),),
+        provider_edge=ProviderEdgeHop(vendor_id, IPv4Address("192.0.2.21"), "parent"),
+    )
+
+
+def _key() -> TemplateKey:
+    return TemplateKey("DIA", Operation.PROVISION, NodeRole.ACCESS)
+
+
+def _catalog() -> PluginCatalog:
+    catalog = PluginCatalog()
+    for vendor_id in ("cisco", "huawei"):
+        catalog.register_vendor(VendorDefinition(vendor_id, {_key(): f"{vendor_id}/access.j2"}))
+    catalog.register_service(DiaIntentParser(catalog.vendor_ids()))
+    return catalog
+
+
+def _context_catalog() -> PluginCatalog:
+    catalog = _catalog()
+    catalog.register_context_builder("DIA", build_dia_hop_context)
+    catalog.register_vendor_qos_builder("cisco", build_cisco_qos_context)
+    catalog.register_vendor_qos_builder("huawei", build_huawei_qos_context)
+    return catalog
+
+
+class _TemplateSource:
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.calls: list[tuple[str, str]] = []
+
+    def read_text(self, vendor_id: str, resource_path: str) -> str:
+        """Conserva el recurso solicitado y devuelve la plantilla de laboratorio."""
+        self.calls.append((vendor_id, resource_path))
+        return self.content
+
+
+def _artifact() -> NodeConfigurationArtifact:
+    return NodeConfigurationArtifact(
+        hop_index=0, node_id="192.0.2.11", management_ip=IPv4Address("192.0.2.11"),
+        vendor="cisco", role=NodeRole.ACCESS, operation=Operation.PROVISION,
+        template_key=_key(), rendered_text="! laboratorio\ninterface client\n shutdown\n",
+        commands=("interface client", " shutdown"),
+        sha256=compute_sha256("! laboratorio\ninterface client\n shutdown\n"),
+    )
+
+
+@pytest.mark.parametrize(
+    ("raw_text", "expected"),
+    [("", ""), (" \t\r\n\r", ""),
+     ("\r\n interface client \t\r shutdown\t\r\n\r\n", " interface client\n shutdown\n"),
+     ("first\n \t\n second", "first\n\n second\n"),
+     ("line\n", "line\n")],
+)
+def test_normalization_preserves_cli_indentation_and_internal_blank_lines(
+    raw_text: str, expected: str,
+) -> None:
+    """Elimina bordes vacios y espacios finales con terminadores LF idempotentes."""
+    assert normalize_rendered_config(raw_text) == expected
+    assert normalize_rendered_config(expected) == expected
+
+
+def test_sha256_matches_known_utf8_vector() -> None:
+    """Produce el vector SHA-256 conocido sin agregar terminadores ni metadatos."""
+    assert compute_sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+    assert compute_sha256("abc\n") != compute_sha256("abc")
+
+
+def test_renderer_resolves_vendor_resources_and_normalizes_without_escaping() -> None:
+    """Respeta vendor, variables literales e indentacion al normalizar el renderizado."""
+    source = _TemplateSource("\r\n{% if enabled %}\r\n interface {{ name }}  \r\n{% endif %}\r\n")
+    renderer = JinjaTemplateRenderer(_catalog(), source)
+    context: Mapping[str, object] = {"enabled": True, "name": "LAB<&>"}
+    for vendor_id in ("cisco", "huawei"):
+        assert renderer.render(vendor_id, _key(), context) == " interface LAB<&>\n"
+    assert source.calls == [("cisco", "cisco/access.j2"), ("huawei", "huawei/access.j2")]
+    assert context == {"enabled": True, "name": "LAB<&>"}
+
+
+@pytest.mark.parametrize("template", ["{{ missing }}", "{% if missing %}yes{% endif %}", "{% if %}"])
+def test_renderer_wraps_undefined_variables_and_invalid_syntax(template: str) -> None:
+    """Expone clave y causa Jinja2 sin ocultar variables faltantes ni sintaxis invalida."""
+    renderer = JinjaTemplateRenderer(_catalog(), _TemplateSource(template))
+    with pytest.raises(TemplateRenderError) as error:
+        renderer.render("cisco", _key(), {})
+    assert error.value.template_key == _key()
+    assert error.value.cause
+    assert isinstance(error.value.__cause__, jinja2.TemplateError)
+    assert error.value.cause in str(error.value)
+
+
+def test_renderer_preserves_unsupported_combination_error_before_reading() -> None:
+    """Rechaza una combinacion no declarada sin leer recursos."""
+    source = _TemplateSource("unused")
+    with pytest.raises(UnsupportedCombinationError):
+        JinjaTemplateRenderer(_catalog(), source).render("unknown", _key(), {})
+    assert source.calls == []
+
+
+def test_renderer_preserves_missing_resource_error() -> None:
+    """Conserva TemplateNotFoundError cuando falla el puerto de lectura."""
+    class MissingSource:
+        """Representa un recurso declarado que no esta disponible."""
+
+        def read_text(self, vendor_id: str, resource_path: str) -> str:
+            """Informa la ausencia del recurso solicitado."""
+            raise TemplateNotFoundError(resource_path)
+
+    with pytest.raises(TemplateNotFoundError, match="cisco/access.j2"):
+        JinjaTemplateRenderer(_catalog(), MissingSource()).render("cisco", _key(), {})
+
+
+@pytest.mark.parametrize("operation", list(Operation))
+def test_service_context_exposes_common_fields_and_role_interfaces(operation: Operation) -> None:
+    """Unifica description y asigna interfaces y redes sin depender de vendors."""
+    intent = _intent()
+    contexts = [build_dia_hop_context(intent, index, operation) for index in range(3)]
+    for hop, context in zip(intent.hops, contexts, strict=True):
+        assert {name: context[name] for name in (
+            "service_type", "operation", "description", "vlan_id", "vendor", "role", "management_ip",
+        )} == {
+            "service_type": "DIA", "operation": operation.value,
+            "description": "LAB#INTE#0001", "vlan_id": 3001, "vendor": "cisco",
+            "role": hop.role.value, "management_ip": str(hop.management_ip),
+        }
+        assert "vlan_name" not in context
+        assert "cir_bps" not in context and "cir_kbps" not in context
+    assert contexts[0]["client_interface"] == "client"
+    assert contexts[0]["uplink_interface"] == "uplink"
+    assert contexts[1]["downstream_interface"] == contexts[1]["ingress_interface"] == "down"
+    assert contexts[1]["upstream_interface"] == contexts[1]["egress_interface"] == "up"
+    assert {key: value for key, value in contexts[2].items() if key not in contexts[0]} == {
+        "pe_interface": "parent", "pe_subinterface": "parent.3001",
+        "vrf_name": "LAB-INTERNET", "qos_policy": "LAB_100MB_PARENT", "bandwidth_mbps": 100,
+        "wan_network": "10.255.0.0/30", "wan_netmask": "255.255.255.252", "wan_prefixlen": 30,
+        "wan_pe_ip": "10.255.0.1", "wan_ce_ip": "10.255.0.2", "lan_network": "203.0.113.0/29",
+        "lan_network_address": "203.0.113.0", "lan_netmask": "255.255.255.248", "lan_prefixlen": 29,
+    }
+
+
+@pytest.mark.parametrize("hop_index", [-1, 3, True, 1.5])
+def test_service_context_rejects_indices_outside_the_path(hop_index: int) -> None:
+    """Impide seleccionar indices negativos, inexistentes o de otro tipo."""
+    with pytest.raises(ValueError, match="hop_index:"):
+        build_dia_hop_context(_intent(), hop_index, Operation.PROVISION)
+
+
+@pytest.mark.parametrize("vendor_id", ["cisco", "huawei"])
+def test_catalog_adds_native_qos_units_only_to_provider_edge(vendor_id: str) -> None:
+    """Compone QoS en bps para Cisco y kbps para Huawei sin contaminar otros roles."""
+    catalog = _context_catalog()
+    intent = _intent(vendor_id)
+    for index in (0, 1):
+        assert "rate_unit" not in catalog.build_hop_context(intent, index, Operation.PROVISION)
+    context = catalog.build_hop_context(intent, 2, Operation.PROVISION)
+    if vendor_id == "cisco":
+        expected = {
+            "rate_unit": "bps", "cir_rate": 100_000_000, "pir_rate": 100_000_000,
+            "cir_bps": 100_000_000, "pir_bps": 100_000_000,
+        }
+        assert "cir_kbps" not in context
+    else:
+        expected = {
+            "rate_unit": "kbps", "cir_rate": 100_000, "pir_rate": 100_000,
+            "cir_kbps": 100_000, "pir_kbps": 100_000,
+        }
+        assert "cir_bps" not in context
+    assert context == build_dia_hop_context(intent, 2, Operation.PROVISION) | expected
+
+
+def test_context_without_vendor_builder_stays_service_specific() -> None:
+    """Admite un contexto de servicio sin escalado QoS registrado."""
+    catalog = _catalog()
+    catalog.register_context_builder("DIA", build_dia_hop_context)
+    assert catalog.build_hop_context(_intent(), 2, Operation.PROVISION) == (
+        build_dia_hop_context(_intent(), 2, Operation.PROVISION)
+    )
+
+
+def test_catalog_rejects_unknown_or_duplicate_context_registrations() -> None:
+    """Rechaza registros invalidos y conserva los constructores originales."""
+    catalog = _catalog()
+    with pytest.raises(PluginRegistrationError, match="vendor no registrado"):
+        catalog.register_vendor_qos_builder("unknown", build_cisco_qos_context)
+    with pytest.raises(PluginRegistrationError, match="servicio no registrado"):
+        catalog.register_context_builder("UNKNOWN", build_dia_hop_context)
+    catalog.register_vendor_qos_builder("cisco", build_cisco_qos_context)
+    catalog.register_context_builder("DIA", build_dia_hop_context)
+    with pytest.raises(PluginRegistrationError, match="duplicado"):
+        catalog.register_vendor_qos_builder("cisco", build_huawei_qos_context)
+    with pytest.raises(PluginRegistrationError, match="duplicado"):
+        catalog.register_context_builder("DIA", lambda *arguments: {})
+    assert catalog.build_hop_context(_intent(), 2, Operation.PROVISION)["cir_bps"] == 100_000_000
+
+
+def test_catalog_reports_missing_builders_and_keeps_instances_isolated() -> None:
+    """Informa registros faltantes sin compartir constructores entre catalogos."""
+    _context_catalog()
+    catalog = _catalog()
+    with pytest.raises(PluginRegistrationError, match="registre un constructor QoS"):
+        catalog.build_vendor_qos_context("cisco", 100_000, 100_000)
+    with pytest.raises(PluginRegistrationError, match="registre un constructor"):
+        catalog.build_hop_context(_intent(), 0, Operation.PROVISION)
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [{"hop_index": -1}, {"node_id": " "}, {"rendered_text": ""},
+     {"rendered_text": "interface client\r\n"}, {"commands": ("! laboratorio",)},
+     {"sha256": "0" * 64}],
+)
+def test_artifact_rejects_invalid_configuration_or_fingerprint(overrides: dict[str, object]) -> None:
+    """Exige identidad, texto normalizado, comandos consistentes y huella correspondiente."""
+    with pytest.raises(ValueError):
+        replace(_artifact(), **overrides)
+
+
+def test_generation_models_are_frozen_slotted_and_serialize_as_json() -> None:
+    """Conserva artefactos inmutables y serializa valores completos en orden fijo."""
+    artifact = _artifact()
+    plan = ServiceGenerationPlan(
+        "LAB#INTE#0001", "DIA", Operation.PROVISION, "default", (artifact,),
+        compute_sha256(f"0:192.0.2.11:{artifact.sha256}"),
+    )
+    for model, field in ((artifact, "node_id"), (plan, "service_id")):
+        assert not hasattr(model, "__dict__")
+        with pytest.raises(FrozenInstanceError):
+            setattr(model, field, "changed")
+    serialized = plan.to_dict()
+    assert list(serialized) == [
+        "service_id", "service_type", "operation", "variant", "artifacts", "plan_sha256",
+    ]
+    assert json.loads(json.dumps(serialized)) == {
+        "service_id": "LAB#INTE#0001", "service_type": "DIA", "operation": "provision",
+        "variant": "default", "plan_sha256": plan.plan_sha256,
+        "artifacts": [{
+            "hop_index": 0, "node_id": "192.0.2.11", "management_ip": "192.0.2.11",
+            "vendor": "cisco", "role": "access", "operation": "provision",
+            "template_key": {
+                "service_type": "DIA", "operation": "provision", "role": "access", "variant": "default",
+            },
+            "rendered_text": artifact.rendered_text, "commands": list(artifact.commands),
+            "sha256": artifact.sha256,
+        }],
+    }
+    serialized["artifacts"].clear()
+    assert plan.artifacts == (artifact,)
+    with pytest.raises(ValueError, match="artifacts:"):
+        replace(plan, artifacts=())
+    with pytest.raises(ValueError, match="plan_sha256:"):
+        replace(plan, plan_sha256="0" * 64)

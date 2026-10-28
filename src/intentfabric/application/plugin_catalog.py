@@ -9,13 +9,16 @@ from intentfabric.domain.errors import (
     PluginConsistencyError, PluginRegistrationError, TemplateNotFoundError,
     UnsupportedCombinationError,
 )
-from intentfabric.domain.intent import ServiceIntent
-from intentfabric.domain.template_key import TemplateKey
+from intentfabric.domain.derivations import derive_qos_rates
+from intentfabric.domain.intent import ProviderEdgeHop, ServiceIntent
+from intentfabric.domain.template_key import Operation, TemplateKey
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.domain.validation import ValidationIssue
 
 
 SemanticValidator = Callable[[Any], Sequence[ValidationIssue]]
+HopContextBuilder = Callable[[Any, int, Operation], Mapping[str, object]]
+VendorQosContextBuilder = Callable[[int, int], Mapping[str, object]]
 
 
 class PluginCatalog:
@@ -26,6 +29,8 @@ class PluginCatalog:
         self._service_types: set[str] = set()
         self._intent_parsers = IntentParserRegistry()
         self._service_validators: dict[str, SemanticValidator] = {}
+        self._context_builders: dict[str, HopContextBuilder] = {}
+        self._vendor_qos_builders: dict[str, VendorQosContextBuilder] = {}
 
     def register_vendor(self, definition: VendorDefinition) -> None:
         """Registra una definición de vendor y rechaza identificadores duplicados."""
@@ -54,6 +59,47 @@ class PluginCatalog:
         """Ejecuta el validador del servicio o devuelve una tupla vacia si no existe."""
         validator = self._service_validators.get(intent.service_type)
         return () if validator is None else tuple(validator(intent))
+
+    def register_vendor_qos_builder(self, vendor_id: str, builder: VendorQosContextBuilder) -> None:
+        """Asocia el escalado QoS a un vendor registrado sin reemplazar registros."""
+        if vendor_id not in self._vendors:
+            raise PluginRegistrationError(f"vendor_id: vendor no registrado {vendor_id!r}")
+        if vendor_id in self._vendor_qos_builders:
+            raise PluginRegistrationError(f"vendor_id: constructor QoS duplicado {vendor_id!r}")
+        self._vendor_qos_builders[vendor_id] = builder
+
+    def build_vendor_qos_context(
+        self, vendor_id: str, cir_kbps: int, pir_kbps: int,
+    ) -> Mapping[str, object]:
+        """Ejecuta el constructor QoS del vendor o informa su registro faltante."""
+        builder = self._vendor_qos_builders.get(vendor_id)
+        if builder is None:
+            raise PluginRegistrationError(f"vendor_id: registre un constructor QoS para {vendor_id!r}")
+        return builder(cir_kbps, pir_kbps)
+
+    def register_context_builder(self, service_type: str, builder: HopContextBuilder) -> None:
+        """Asocia un constructor a un servicio registrado sin reemplazar registros."""
+        if service_type not in self._service_types:
+            raise PluginRegistrationError(f"service_type: servicio no registrado {service_type!r}")
+        if service_type in self._context_builders:
+            raise PluginRegistrationError(f"service_type: constructor duplicado {service_type!r}")
+        self._context_builders[service_type] = builder
+
+    def build_hop_context(
+        self, intent: Any, hop_index: int, operation: Operation,
+    ) -> dict[str, object]:
+        """Compone el contexto del servicio y agrega el escalado QoS del PE registrado."""
+        builder = self._context_builders.get(intent.service_type)
+        if builder is None:
+            raise PluginRegistrationError(
+                f"service_type: registre un constructor para {intent.service_type!r}"
+            )
+        context = dict(builder(intent, hop_index, operation))
+        hop = intent.hops[hop_index]
+        if isinstance(hop, ProviderEdgeHop) and hop.vendor in self._vendor_qos_builders:
+            rates = derive_qos_rates(intent.bandwidth_mbps)
+            context.update(self.build_vendor_qos_context(hop.vendor, rates.cir_kbps, rates.pir_kbps))
+        return context
 
     def vendor_ids(self) -> frozenset[str]:
         """Devuelve una instantánea inmutable de los vendors registrados."""
