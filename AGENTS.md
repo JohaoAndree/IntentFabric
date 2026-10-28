@@ -22,7 +22,7 @@ Documento que define cada tarea; el prompt indica cuál. Ubicación: `docs/adr/A
 * Si la especificación no sigue esta estructura: ejecuta solo lo redactado como instrucción de implementación y trata el resto como contexto. Si no puedes distinguirlos, o faltan criterios de aceptación verificables, detente y pregunta.
 
 ## Fuentes de verdad
-Precedencia al interpretar: Especificación > AGENTS.md > `pyproject.toml` y `tests/test_architecture.py` > convenciones del código existente. Una contradicción que impida cumplir la tarea es un bloqueo (ver «Cómo trabajar»).
+Precedencia al interpretar: Especificación > AGENTS.md > `pyproject.toml` y `tests/unit/test_architecture.py` > convenciones del código existente. Una contradicción que impida cumplir la tarea es un bloqueo (ver «Cómo trabajar»).
 
 ## Roles
 * **Implementación** (por defecto): ejecuta los pasos de Implementación de la especificación indicada.
@@ -52,7 +52,7 @@ Precedencia al interpretar: Especificación > AGENTS.md > `pyproject.toml` y `te
 
 ## Arquitectura
 * Estructura: paquete raíz `src/intentfabric/` dividido en `domain/` (modelos inmutables, excepciones, derivaciones matemáticas puras, normalizador de interfaces), `application/` (puertos abstractos, catálogo de plugins, servicios de las 4 fases del pipeline y orquestador), `services/<s>/` (parsers de intención, validadores semánticos y estado esperado por servicio: `dia`, `l3vpn`, `l2vpn`), `vendors/<v>/` (definición del fabricante, escalado de unidades bps/kbps y plantillas Jinja2 por fabricante: `cisco`, `huawei`), `adapters/` (implementaciones de E/S: carga JSON/YAML, repositorio `inventory/topology.yaml`, motor Jinja2, transporte Netmiko/Simulado, parsers CLI y logger JSON/CSV) y `cli/` (entrypoint `argparse`).
-* Dependencias permitidas: `domain/`, `application/`, `services/` y `vendors/` dependen exclusivamente de la biblioteca estándar de Python (`stdlib`); las librerías de terceros (`jinja2`, `pyyaml`, `netmiko`, `paramiko`, `textfsm`) están estrictamente confinadas en `adapters/`, verificado mediante análisis estático de AST en `tests/test_architecture.py`. `domain/` no importa de ninguna otra capa.
+* Dependencias permitidas: `domain/`, `application/`, `services/` y `vendors/` dependen exclusivamente de la biblioteca estándar de Python (`stdlib`); las librerías de terceros (`jinja2`, `pyyaml`, `netmiko`, `paramiko`, `textfsm`) están estrictamente confinadas en `adapters/`, verificado mediante análisis estático de AST en `tests/unit/test_architecture.py`. `domain/` no importa de ninguna otra capa.
 * Lógica de negocio sin efectos secundarios (red, archivos, entorno): esos accesos ocurren en los bordes (`adapters/` y `cli/`).
 * Sin estado global mutable. Modelos inmutables (`@dataclass(frozen=True)`) y tipados estrictamente.
 * Versión mínima del lenguaje: `Python >= 3.13` (entorno base `Python 3.14.2`) definida en `pyproject.toml` y alineada con `ADR-002`.
@@ -72,7 +72,7 @@ Desde la raíz del repositorio.
 | Crear entorno | `py -3.14 -m venv .venv` |
 | Instalar dependencias | `.venv\Scripts\python -m pip install -r requirements.lock && .venv\Scripts\python -m pip install --no-deps -e .` |
 | Pruebas | `.venv\Scripts\python -m pytest` |
-| Lint / formato | `.venv\Scripts\python scripts/check_env.py && .venv\Scripts\python -m pytest tests/test_architecture.py` |
+| Lint / formato | `.venv\Scripts\python scripts/check_env.py && .venv\Scripts\python -m pytest tests/unit/test_architecture.py` |
 
 Comprueba que la versión activa del runtime cumple la versión mínima de «Arquitectura». No cambies de versión ni instales extras que la especificación no autorice. Si algo no puede ejecutarse por un requisito del entorno, reporta el bloqueo; no lo presentes como éxito.
 
