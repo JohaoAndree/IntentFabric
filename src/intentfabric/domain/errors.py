@@ -1,4 +1,4 @@
-"""Errores de interpretación de intenciones y de registro de plugins."""
+"""Errores de dominio (IntentFabricError), interpretacion, plugins y validacion previa (PreValidationFailedError)."""
 
 from intentfabric.domain.validation import ValidationReport
 

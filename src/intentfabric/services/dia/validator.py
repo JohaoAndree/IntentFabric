@@ -15,7 +15,6 @@ def validate_dia_intent_semantics(intent: DiaIntent) -> tuple[ValidationIssue, .
         ))
 
     hops = (intent.access, *intent.transits, intent.provider_edge)
-    lan_network = getattr(intent, "lan_network", None)
     for index, hop in enumerate(hops):
         if intent.vlan_id in {1, 1002, 1003, 1004, 1005} and hop.vendor == "cisco":
             issues.append(ValidationIssue(
@@ -25,7 +24,7 @@ def validate_dia_intent_semantics(intent: DiaIntent) -> tuple[ValidationIssue, .
                 field_path="vlan_id", node_id=str(hop.management_ip),
             ))
         if hop.management_ip in intent.wan_network or (
-            lan_network is not None and hop.management_ip in lan_network
+            hop.management_ip in intent.lan_network
         ):
             issues.append(ValidationIssue(
                 code="MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK",

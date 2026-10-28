@@ -104,7 +104,10 @@ class PreValidationService:
             if hop.vendor not in self._catalog.vendor_ids() or role is None:
                 continue
             for operation in operations:
-                key_operation = next((candidate for candidate in Operation if candidate == operation), None)
+                try:
+                    key_operation = Operation(operation)
+                except ValueError:
+                    key_operation = None
                 if key_operation is None or not self._catalog.supports(
                     hop.vendor, TemplateKey(intent.service_type, key_operation, role, variant),
                 ):
@@ -160,7 +163,7 @@ def _validate_path(intent: Any) -> tuple[ValidationIssue, ...]:
                 code="DUPLICATE_MANAGEMENT_IP",
                 message="management_ip: cada salto de la ruta debe tener una direccion distinta.",
                 stage=ValidationStage.STATIC_OFFLINE,
-                field_path=f"hops[{index}].management_ip", node_id=str(hop.management_ip),
+                field_path=f"hops[{index}].management_ip", node_id=_node_identifier(hop),
             ))
         seen_addresses.add(hop.management_ip)
     return tuple(issues)
