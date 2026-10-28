@@ -6,6 +6,7 @@ from types import ModuleType
 from intentfabric.adapters.packaged_template_source import PackagedTemplateSource
 from intentfabric.application.plugin_catalog import PluginCatalog
 from intentfabric.services.dia.intent_parser import DiaIntentParser
+from intentfabric.services.dia.validator import validate_dia_intent_semantics
 from intentfabric.vendors import cisco, huawei
 
 
@@ -26,6 +27,7 @@ def build_plugin_catalog() -> PluginCatalog:
     for package in VENDOR_PACKAGES:
         catalog.register_vendor(package.VENDOR_DEFINITION)
     catalog.register_service(DiaIntentParser(known_vendors=catalog.vendor_ids()))
+    catalog.register_service_validator(DiaIntentParser.service_type, validate_dia_intent_semantics)
     return catalog
 
 

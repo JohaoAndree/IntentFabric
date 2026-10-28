@@ -1,6 +1,6 @@
 """Catálogo de vendors, servicios y combinaciones de plantilla soportadas."""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
 from intentfabric.application.intent_parsing import IntentParserRegistry, ServiceIntentParser
@@ -12,6 +12,10 @@ from intentfabric.domain.errors import (
 from intentfabric.domain.intent import ServiceIntent
 from intentfabric.domain.template_key import TemplateKey
 from intentfabric.domain.vendor_definition import VendorDefinition
+from intentfabric.domain.validation import ValidationIssue
+
+
+SemanticValidator = Callable[[Any], Sequence[ValidationIssue]]
 
 
 class PluginCatalog:
@@ -21,6 +25,7 @@ class PluginCatalog:
         self._vendors: dict[str, VendorDefinition] = {}
         self._service_types: set[str] = set()
         self._intent_parsers = IntentParserRegistry()
+        self._service_validators: dict[str, SemanticValidator] = {}
 
     def register_vendor(self, definition: VendorDefinition) -> None:
         """Registra una definición de vendor y rechaza identificadores duplicados."""
@@ -34,6 +39,21 @@ class PluginCatalog:
             raise PluginRegistrationError(f"service_type: registro duplicado {parser.service_type!r}")
         self._intent_parsers.register(parser)
         self._service_types.add(parser.service_type)
+
+    def register_service_validator(
+        self, service_type: str, validator: SemanticValidator,
+    ) -> None:
+        """Asocia un validador a un servicio registrado y rechaza duplicados."""
+        if service_type not in self._service_types:
+            raise PluginRegistrationError(f"service_type: servicio no registrado {service_type!r}")
+        if service_type in self._service_validators:
+            raise PluginRegistrationError(f"service_type: validador duplicado {service_type!r}")
+        self._service_validators[service_type] = validator
+
+    def validate_semantics(self, intent: ServiceIntent) -> tuple[ValidationIssue, ...]:
+        """Ejecuta el validador del servicio o devuelve una tupla vacia si no existe."""
+        validator = self._service_validators.get(intent.service_type)
+        return () if validator is None else tuple(validator(intent))
 
     def vendor_ids(self) -> frozenset[str]:
         """Devuelve una instantánea inmutable de los vendors registrados."""
