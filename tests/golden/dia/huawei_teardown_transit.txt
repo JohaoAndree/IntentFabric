@@ -1,0 +1,7 @@
+interface GigabitEthernet1/0/23
+ undo port trunk allow-pass vlan 3001
+quit
+interface GigabitEthernet1/0/24
+ undo port trunk allow-pass vlan 3001
+quit
+undo vlan 3001

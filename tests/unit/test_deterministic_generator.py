@@ -1,7 +1,7 @@
 """Garantiza renderizado estricto, contextos aislados y artefactos reproducibles."""
 
-from collections.abc import Mapping
-from dataclasses import FrozenInstanceError, replace
+from collections.abc import Mapping, Sequence
+from dataclasses import FrozenInstanceError, dataclass, fields, replace
 from ipaddress import IPv4Address, IPv4Network
 import json
 
@@ -10,8 +10,13 @@ import pytest
 
 from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
 from intentfabric.application.plugin_catalog import PluginCatalog
+from intentfabric.application.generation import DeterministicGeneratorService
+from intentfabric.application.pre_validation import PreValidationService
+from intentfabric.bootstrap import (
+    build_generator, build_plugin_catalog, create_default_catalog, create_default_generator,
+)
 from intentfabric.domain.errors import (
-    PluginRegistrationError, TemplateNotFoundError, TemplateRenderError,
+    PluginRegistrationError, PreValidationFailedError, TemplateNotFoundError, TemplateRenderError,
     UnsupportedCombinationError,
 )
 from intentfabric.domain.generation import (
@@ -19,6 +24,7 @@ from intentfabric.domain.generation import (
 )
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
+from intentfabric.domain.validation import ValidationReport
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.services.dia.context_builder import build_dia_hop_context
 from intentfabric.services.dia.intent_parser import DiaIntentParser
@@ -283,3 +289,146 @@ def test_generation_models_are_frozen_slotted_and_serialize_as_json() -> None:
         replace(plan, artifacts=())
     with pytest.raises(ValueError, match="plan_sha256:"):
         replace(plan, plan_sha256="0" * 64)
+
+
+class _RecordingRenderer:
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, TemplateKey, Mapping[str, object]]] = []
+
+    def render(self, vendor_id: str, key: TemplateKey, context: Mapping[str, object]) -> str:
+        """Registra el salto y devuelve texto CLI con comentarios y lineas vacias."""
+        self.calls.append((vendor_id, key, dict(context)))
+        return "! laboratorio\n # comentario indentado\ninterface client\n\n shutdown\n"
+
+
+@pytest.mark.parametrize(
+    ("overrides", "expected_code"),
+    [({"vlan_id": 0}, "INVALID_VLAN_RANGE"),
+     ({"vlan_id": 1002}, "RESERVED_CISCO_VLAN"),
+     ({"bandwidth_mbps": 1001}, "BANDWIDTH_EXCEEDS_PORT_CAPACITY"),
+     ({"wan_network": IPv4Network("192.0.2.8/30")}, "MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK")],
+)
+@pytest.mark.parametrize("operation", tuple(Operation))
+def test_generator_aborts_semantic_errors_before_any_rendering(
+    overrides: dict[str, object], expected_code: str, operation: Operation,
+) -> None:
+    """Bloquea la Fase 2 ante reglas semanticas invalidadas en provision y teardown."""
+    catalog = build_plugin_catalog()
+    renderer = _RecordingRenderer()
+    generator = DeterministicGeneratorService(catalog, renderer, PreValidationService(catalog))
+    with pytest.raises(PreValidationFailedError) as error:
+        generator.generate(replace(_intent(), **overrides), operation=operation)
+    assert expected_code in {issue.code for issue in error.value.report.errors}
+    assert renderer.calls == []
+
+
+def test_default_factory_runs_prevalidation_before_renderer(monkeypatch: pytest.MonkeyPatch) -> None:
+    """La composicion por defecto impide renderizar cuando se repite una IP de gestion."""
+    renderer = _RecordingRenderer()
+    monkeypatch.setattr(JinjaTemplateRenderer, "render", renderer.render)
+    intent = _intent()
+    intent = replace(intent, provider_edge=replace(
+        intent.provider_edge, management_ip=intent.access.management_ip,
+    ))
+    with pytest.raises(PreValidationFailedError) as error:
+        build_generator().generate(intent)
+    assert "DUPLICATE_MANAGEMENT_IP" in {issue.code for issue in error.value.report.errors}
+    assert renderer.calls == []
+
+
+def test_generator_forwards_variant_and_blocks_missing_templates() -> None:
+    """Valida la variante solicitada antes de generar el primer artefacto."""
+    catalog = build_plugin_catalog()
+    renderer = _RecordingRenderer()
+    generator = DeterministicGeneratorService(catalog, renderer, PreValidationService(catalog))
+    with pytest.raises(PreValidationFailedError) as error:
+        generator.generate(_intent(), variant="lab")
+    assert all(issue.code == "MISSING_TEMPLATE_KEY" for issue in error.value.report.errors)
+    assert len(error.value.report.errors) == 3
+    assert all("/lab" in issue.message for issue in error.value.report.errors)
+    assert renderer.calls == []
+
+
+def test_generator_keeps_route_order_filters_comments_and_hashes_full_text() -> None:
+    """Conserva el orden de transitos y el texto completo al extraer comandos CLI."""
+    intent = _intent()
+    second_transit = replace(intent.transits[0], management_ip=IPv4Address("192.0.2.13"))
+    intent = replace(intent, transits=(second_transit, intent.transits[0]))
+    catalog = build_plugin_catalog()
+    renderer = _RecordingRenderer()
+    plan = DeterministicGeneratorService(catalog, renderer, PreValidationService(catalog)).generate(
+        intent, operation="teardown",
+    )
+    assert plan.operation is Operation.TEARDOWN
+    assert tuple(artifact.node_id for artifact in plan.artifacts) == (
+        "192.0.2.11", "192.0.2.13", "192.0.2.12", "192.0.2.21",
+    )
+    for index, artifact in enumerate(plan.artifacts):
+        assert artifact.hop_index == index
+        assert artifact.commands == ("interface client", " shutdown")
+        assert artifact.sha256 == compute_sha256(artifact.rendered_text)
+        assert artifact.sha256 != compute_sha256("\n".join(artifact.commands))
+        vendor_id, key, context = renderer.calls[index]
+        assert vendor_id == intent.hops[index].vendor
+        assert key.operation is Operation.TEARDOWN
+        assert context["operation"] == "teardown"
+
+
+@dataclass(frozen=True)
+class _IdentifiedAccess(AccessHop):
+    node_id: str | None = None
+    hostname: str | None = None
+
+
+@dataclass(frozen=True)
+class _IdentifiedIntent(DiaIntent):
+    service_id: str | None = None
+
+
+@pytest.mark.parametrize(
+    ("node_id", "hostname", "expected_id"),
+    [("LAB-ACCESS", "LAB-HOST", "LAB-ACCESS"), (None, "LAB-HOST", "LAB-HOST"),
+     (None, None, "192.0.2.11")],
+)
+def test_generator_uses_explicit_service_and_node_identity_when_available(
+    node_id: str | None, hostname: str | None, expected_id: str,
+) -> None:
+    """Prioriza service_id y node_id, con hostname e IP como alternativas de identidad."""
+    base = _intent()
+    intent = _IdentifiedIntent(
+        **{field.name: getattr(base, field.name) for field in fields(base)},
+        service_id="LAB-SERVICE",
+    )
+    intent = replace(intent, access=_IdentifiedAccess(
+        "cisco", base.access.management_ip, "client", "uplink", node_id, hostname,
+    ))
+    plan = build_generator().generate(intent)
+    assert plan.service_id == "LAB-SERVICE"
+    assert plan.artifacts[0].node_id == expected_id
+    assert build_generator().generate(base).service_id == base.description
+
+
+def test_factory_honors_injected_catalog_source_and_prevalidator() -> None:
+    """Usa los componentes suministrados y propaga operacion y variante al validador."""
+    class RecordingPreValidator(PreValidationService):
+        """Conserva la solicitud de validacion ademas de ejecutar las reglas reales."""
+
+        def validate_and_require(
+            self, intent: DiaIntent, *, operations: Sequence[str] = ("provision", "teardown"),
+            variant: str = "default",
+        ) -> ValidationReport:
+            """Registra la solicitud y exige que la intencion sea valida."""
+            calls.append((intent, tuple(operations), variant))
+            return super().validate_and_require(intent, operations=operations, variant=variant)
+
+    catalog = build_plugin_catalog()
+    calls: list[tuple[DiaIntent, tuple[str, ...], str]] = []
+    source = _TemplateSource("{{ operation }} {{ description }}\n")
+    generator = build_generator(catalog, source, RecordingPreValidator(catalog))
+    intent = _intent()
+    plan = generator.generate(intent, operation="teardown")
+    assert calls == [(intent, ("teardown",), "default")]
+    assert len(source.calls) == 3
+    assert all(artifact.rendered_text == "teardown LAB#INTE#0001\n" for artifact in plan.artifacts)
+    assert create_default_catalog is build_plugin_catalog
+    assert create_default_generator is build_generator

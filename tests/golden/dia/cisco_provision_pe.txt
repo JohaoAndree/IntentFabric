@@ -1,0 +1,15 @@
+policy-map LAB_100MB_PARENT
+ class class-default
+  police rate 100000000 bps
+ exit
+exit
+interface GigabitEthernet0/0/1.3001
+ description LAB#INTE#0001
+ encapsulation dot1Q 3001
+ vrf forwarding LAB-INTERNET
+ ip address 10.255.0.1 255.255.255.252
+ service-policy input LAB_100MB_PARENT
+ service-policy output LAB_100MB_PARENT
+ no shutdown
+exit
+ip route vrf LAB-INTERNET 203.0.113.0 255.255.255.248 10.255.0.2

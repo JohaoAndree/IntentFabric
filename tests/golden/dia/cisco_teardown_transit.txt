@@ -1,0 +1,7 @@
+interface GigabitEthernet1/0/23
+ switchport trunk allowed vlan remove 3001
+exit
+interface GigabitEthernet1/0/24
+ switchport trunk allowed vlan remove 3001
+exit
+no vlan 3001

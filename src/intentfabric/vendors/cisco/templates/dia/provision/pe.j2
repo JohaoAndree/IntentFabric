@@ -1,0 +1,15 @@
+policy-map {{ qos_policy }}
+ class class-default
+  police rate {{ cir_bps }} bps
+ exit
+exit
+interface {{ pe_subinterface }}
+ description {{ description }}
+ encapsulation dot1Q {{ vlan_id }}
+ vrf forwarding {{ vrf_name }}
+ ip address {{ wan_pe_ip }} {{ wan_netmask }}
+ service-policy input {{ qos_policy }}
+ service-policy output {{ qos_policy }}
+ no shutdown
+exit
+ip route vrf {{ vrf_name }} {{ lan_network_address }} {{ lan_netmask }} {{ wan_ce_ip }}

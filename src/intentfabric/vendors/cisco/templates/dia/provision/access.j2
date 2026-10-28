@@ -1,0 +1,13 @@
+vlan {{ vlan_id }}
+ name {{ description }}
+exit
+interface {{ client_interface }}
+ description {{ description }}
+ switchport mode access
+ switchport access vlan {{ vlan_id }}
+ no shutdown
+exit
+interface {{ uplink_interface }}
+ switchport mode trunk
+ switchport trunk allowed vlan add {{ vlan_id }}
+exit

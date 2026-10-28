@@ -1,0 +1,11 @@
+vlan {{ vlan_id }}
+ description {{ description }}
+quit
+interface {{ ingress_interface }}
+ port link-type trunk
+ port trunk allow-pass vlan {{ vlan_id }}
+quit
+interface {{ egress_interface }}
+ port link-type trunk
+ port trunk allow-pass vlan {{ vlan_id }}
+quit

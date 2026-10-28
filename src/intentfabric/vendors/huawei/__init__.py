@@ -1,9 +1,12 @@
 """Definición declarativa del vendor Huawei."""
 
 from intentfabric.domain.vendor_definition import VendorDefinition
+from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 
-# ADR-006 agrega las plantillas y sus declaraciones.
-VENDOR_DEFINITION = VendorDefinition(vendor_id="huawei", templates={})
+VENDOR_DEFINITION = VendorDefinition(vendor_id="huawei", templates={
+    TemplateKey("DIA", operation, role): f"templates/dia/{operation.value}/{role.value}.j2"
+    for operation in Operation for role in NodeRole
+})
 
 
 def build_huawei_qos_context(cir_kbps: int, pir_kbps: int) -> dict[str, object]:

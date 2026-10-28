@@ -468,7 +468,11 @@ def test_valid_path_supports_zero_or_more_transit_hops(transit_count: int) -> No
 def test_empty_vendor_declarations_report_every_required_template() -> None:
     """Acumula provision y teardown faltantes para cada rol de la ruta real."""
     checker = _PreFlightChecker()
-    report = PreValidationService(build_plugin_catalog(), checker).validate(_dia_intent())
+    catalog = PluginCatalog()
+    for vendor_id in ("cisco", "huawei"):
+        catalog.register_vendor(VendorDefinition(vendor_id, {}))
+    catalog.register_service(DiaIntentParser(catalog.vendor_ids()))
+    report = PreValidationService(catalog, checker).validate(_dia_intent())
     assert len(report.errors) == 6
     assert all(issue.code == "MISSING_TEMPLATE_KEY" for issue in report.errors)
     for index in range(3):
