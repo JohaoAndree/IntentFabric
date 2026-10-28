@@ -58,7 +58,8 @@ class ValidationReport:
     preflight_executed: bool = False
 
     def __post_init__(self) -> None:
-        object.__setattr__(self, "issues", tuple(sorted(self.issues, key=ValidationIssue.sort_key)))
+        ordered = sorted(self.issues, key=lambda issue: (issue.sort_key(), issue.message))
+        object.__setattr__(self, "issues", tuple(ordered))
 
     @property
     def errors(self) -> tuple[ValidationIssue, ...]:

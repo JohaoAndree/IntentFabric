@@ -7,7 +7,12 @@ import json
 import pytest
 
 from intentfabric.domain import (
-    ValidationIssue, ValidationReport, ValidationSeverity, ValidationStage,
+    IntentFabricError, PreValidationFailedError, ValidationIssue,
+    ValidationReport, ValidationSeverity, ValidationStage,
+)
+from intentfabric.domain.errors import (
+    IntentParseError, PluginConsistencyError, PluginRegistrationError,
+    TemplateNotFoundError, UnsupportedCombinationError,
 )
 
 
@@ -83,6 +88,37 @@ def test_report_filters_errors_and_warnings_in_canonical_order() -> None:
     assert not report.preflight_executed
     assert ValidationReport("LAB-001", "DIA", (warning,)).is_valid
     assert ValidationReport("LAB-001", "DIA", ()).is_valid
+
+
+def test_report_orders_messages_when_taxonomy_and_location_match() -> None:
+    """Resuelve empates de la clave canonica sin depender del orden de llegada."""
+    first = _issue(message="Declare la plantilla provision.")
+    second = _issue(message="Declare la plantilla teardown.")
+    assert first.sort_key() == second.sort_key()
+    for issue_order in [(first, second), (second, first)]:
+        assert ValidationReport("LAB-001", "DIA", issue_order).issues == (first, second)
+
+
+@pytest.mark.parametrize("error_type", [
+    IntentParseError, PluginConsistencyError, PluginRegistrationError,
+    TemplateNotFoundError, UnsupportedCombinationError,
+])
+def test_existing_errors_inherit_the_framework_base(error_type: type[Exception]) -> None:
+    """Conserva compatibilidad con Exception y permite capturar errores del framework."""
+    assert issubclass(error_type, IntentFabricError)
+    assert issubclass(error_type, Exception)
+
+
+def test_pre_validation_error_preserves_the_report_and_error_codes() -> None:
+    """Expone el reporte original y detalla servicio y errores en el mensaje."""
+    warning = _issue(code="CHECK_POLICY", severity=ValidationSeverity.WARNING)
+    report = ValidationReport("LAB-001", "DIA", (_issue(), warning))
+    error = PreValidationFailedError(report)
+    assert isinstance(error, IntentFabricError)
+    assert error.report is report
+    assert "LAB-001" in str(error)
+    assert "['UNSUPPORTED_VENDOR']" in str(error)
+    assert "CHECK_POLICY" not in str(error)
 
 
 def test_report_serializes_explicit_values_and_fixed_field_order() -> None:
