@@ -13,16 +13,16 @@ from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 
 
-def test_verified_catalog_accepts_all_twelve_dia_templates() -> None:
-    """Verifica DIA y todas las plantillas empaquetadas de los vendors reales."""
+def test_verified_catalog_accepts_all_dia_and_l3vpn_templates() -> None:
+    """Verifica DIA, L3VPN y todas sus plantillas empaquetadas por fabricante."""
     catalog = bootstrap.build_verified_catalog()
     assert catalog.vendor_ids() == frozenset({"cisco", "huawei"})
-    assert catalog.service_types() == frozenset({"DIA"})
+    assert catalog.service_types() == frozenset({"DIA", "L3VPN"})
     assert catalog.verify_consistency(bootstrap.build_template_source()) == ()
-    for vendor_id in ("cisco", "huawei"):
+    for vendor_id, service_type in ((vendor, service) for vendor in ("cisco", "huawei") for service in ("DIA", "L3VPN")):
         for operation in Operation:
             for role in NodeRole:
-                key = TemplateKey("DIA", operation, role)
+                key = TemplateKey(service_type, operation, role)
                 assert catalog.supports(vendor_id, key)
 
 

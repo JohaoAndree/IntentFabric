@@ -1,0 +1,31 @@
+ip vpn-instance {{ vrf_name }}
+ description {{ description }}
+ ipv4-family
+  route-distinguisher {{ rd }}
+  vpn-target {{ rt_export }} export-extcommunity
+  vpn-target {{ rt_import }} import-extcommunity
+#
+traffic classifier {{ qos_policy }}_CLASS operator or
+ if-match any
+#
+traffic behavior {{ qos_policy }}_BEHAVIOR
+ car cir {{ cir_kbps }} pir {{ pir_kbps }}
+#
+traffic policy {{ qos_policy }}
+ classifier {{ qos_policy }}_CLASS behavior {{ qos_policy }}_BEHAVIOR
+#
+interface {{ pe_subinterface }}
+ description {{ description }}
+ dot1q termination vid {{ vlan_id }}
+ ip binding vpn-instance {{ vrf_name }}
+ ip address {{ wan_pe_ip }} {{ wan_netmask }}
+ arp broadcast enable
+ traffic-policy {{ qos_policy }} inbound
+ traffic-policy {{ qos_policy }} outbound
+ undo shutdown
+#
+bgp {{ pe_asn }}
+ ipv4-family vpn-instance {{ vrf_name }}
+  import-route direct
+  peer {{ wan_ce_ip }} as-number {{ ce_asn }}
+  peer {{ wan_ce_ip }} description {{ description }}

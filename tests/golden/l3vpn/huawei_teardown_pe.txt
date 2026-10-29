@@ -1,0 +1,10 @@
+bgp 65000
+ undo ipv4-family vpn-instance VRF_CORP_A
+#
+undo interface GigabitEthernet0/0/0.110
+#
+undo traffic policy QOS_L3VPN_100M
+undo traffic behavior QOS_L3VPN_100M_BEHAVIOR
+undo traffic classifier QOS_L3VPN_100M_CLASS
+#
+undo ip vpn-instance VRF_CORP_A

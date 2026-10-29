@@ -1,0 +1,10 @@
+interface GigabitEthernet1/0/1
+ no description
+ no switchport access vlan
+ no switchport mode
+ shutdown
+exit
+interface GigabitEthernet1/0/10
+ switchport trunk allowed vlan remove 110
+exit
+no vlan 110

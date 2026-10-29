@@ -1,0 +1,31 @@
+ip vpn-instance VRF_CORP_A
+ description L3VPN-CORP-000001
+ ipv4-family
+  route-distinguisher 65000:110
+  vpn-target 65000:110 export-extcommunity
+  vpn-target 65000:110 import-extcommunity
+#
+traffic classifier QOS_L3VPN_100M_CLASS operator or
+ if-match any
+#
+traffic behavior QOS_L3VPN_100M_BEHAVIOR
+ car cir 100000 pir 100000
+#
+traffic policy QOS_L3VPN_100M
+ classifier QOS_L3VPN_100M_CLASS behavior QOS_L3VPN_100M_BEHAVIOR
+#
+interface GigabitEthernet0/0/0.110
+ description L3VPN-CORP-000001
+ dot1q termination vid 110
+ ip binding vpn-instance VRF_CORP_A
+ ip address 172.16.10.1 255.255.255.252
+ arp broadcast enable
+ traffic-policy QOS_L3VPN_100M inbound
+ traffic-policy QOS_L3VPN_100M outbound
+ undo shutdown
+#
+bgp 65000
+ ipv4-family vpn-instance VRF_CORP_A
+  import-route direct
+  peer 172.16.10.2 as-number 65110
+  peer 172.16.10.2 description L3VPN-CORP-000001
