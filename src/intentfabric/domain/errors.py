@@ -1,11 +1,48 @@
 """Errores de dominio (IntentFabricError), interpretacion, plugins y validacion previa (PreValidationFailedError)."""
 
+from typing import TYPE_CHECKING
+
 from intentfabric.domain.validation import ValidationReport
 from intentfabric.domain.template_key import TemplateKey
+
+if TYPE_CHECKING:
+    from intentfabric.domain.deployment import NodeDeploymentResult
 
 
 class IntentFabricError(Exception):
     """Agrupa los errores explicitos del framework."""
+
+
+class DeviceTransportError(IntentFabricError):
+    """Expone el nodo y comando afectados por un fallo de transporte."""
+
+    def __init__(self, message: str, *, node_id: str, command: str | None = None) -> None:
+        self.node_id = node_id
+        self.command = command
+        super().__init__(message)
+
+
+class CliCommandRejectedError(DeviceTransportError):
+    """Conserva la transcripcion de un comando rechazado por el dispositivo."""
+
+    def __init__(
+        self, message: str, *, node_id: str, command: str | None = None, raw_output: str = ""
+    ) -> None:
+        self.raw_output = raw_output
+        super().__init__(message, node_id=node_id, command=command)
+
+
+class DeploymentError(IntentFabricError):
+    """Conserva el salto fallido y los resultados previos al corte del despliegue."""
+
+    def __init__(
+        self, message: str, *, node_id: str, hop_index: int,
+        partial_results: tuple[NodeDeploymentResult, ...] = (),
+    ) -> None:
+        self.node_id = node_id
+        self.hop_index = hop_index
+        self.partial_results = tuple(partial_results)
+        super().__init__(message)
 
 
 class InvalidInterfaceNameError(IntentFabricError):

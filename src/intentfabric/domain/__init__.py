@@ -4,6 +4,11 @@ from intentfabric.domain.derivations import (
     BandwidthRates, QosRates, WanAddresses, derive_bandwidth_rates, derive_qos_rates,
     derive_subinterface_name, derive_wan_addresses,
 )
+from intentfabric.domain.deployment import (
+    CommandExecutionRecord, DeviceCredentials, NodeDeploymentResult, ServiceDeploymentReport,
+    contains_cli_error, find_cli_error_line,
+)
+from intentfabric.domain.errors import CliCommandRejectedError, DeploymentError, DeviceTransportError
 from intentfabric.domain.errors import IntentFabricError, PreValidationFailedError, TemplateRenderError
 from intentfabric.domain.errors import (
     InvalidInterfaceNameError, TopologyPathResolutionError, TopologyValidationError,
@@ -27,6 +32,9 @@ from intentfabric.domain.intent import (
 )
 
 __all__ = (
+    "CommandExecutionRecord", "DeviceCredentials", "NodeDeploymentResult", "ServiceDeploymentReport",
+    "contains_cli_error", "find_cli_error_line", "CliCommandRejectedError", "DeploymentError",
+    "DeviceTransportError",
     "AccessHop", "DiaIntent", "L2VpnIntent", "L3VpnIntent", "ProviderEdgeHop", "ServiceHop", "ServiceIntent",
     "is_valid_evi_id", "is_valid_pseudowire_id",
     "TransitHop", "is_valid_asn", "is_valid_route_distinguisher_or_target", "QosRates",
