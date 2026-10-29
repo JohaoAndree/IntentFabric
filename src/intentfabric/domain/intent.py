@@ -140,6 +140,53 @@ class L3VpnIntent(ServiceIntent):
         return self.qos_policy_name
 
 
+@dataclass(frozen=True)
+class L2VpnIntent(ServiceIntent):
+    """Describe un circuito L2VPN independiente de su senalizacion."""
+
+    service_type: ClassVar[str] = "L2VPN"
+    vlan_id: int
+    bandwidth_mbps: int
+    qos_policy_name: str
+    pw_id: int
+    evi_id: int
+    local_ac_id: int
+    remote_ac_id: int
+    rd: str
+    rt_import: str
+    rt_export: str
+    remote_pe_node_id: str
+    remote_pe_ip: IPv4Address
+    access: AccessHop
+    transits: tuple[TransitHop, ...]
+    provider_edge: ProviderEdgeHop
+
+    @property
+    def hops(self) -> tuple[ServiceHop, ...]:
+        """Devuelve acceso, transitos y PE en orden de recorrido."""
+        return (self.access, *self.transits, self.provider_edge)
+
+    @property
+    def qos_policy(self) -> str:
+        """Expone el nombre de la politica con el alias declarativo."""
+        return self.qos_policy_name
+
+    @property
+    def instance_name(self) -> str:
+        """Deriva el nombre canonico de instancia desde el EVI."""
+        return f"VPWS_{self.evi_id}"
+
+
+def is_valid_pseudowire_id(value: int) -> bool:
+    """Acepta identificadores de circuito de 32 bits distintos de cero."""
+    return type(value) is int and 1 <= value <= 4_294_967_295
+
+
+def is_valid_evi_id(value: int) -> bool:
+    """Acepta identificadores EVI de 16 bits distintos de cero."""
+    return type(value) is int and 1 <= value <= 65_535
+
+
 def is_valid_asn(value: int) -> bool:
     """Acepta ASN de 32 bits distintos de cero y del valor reservado maximo."""
     return type(value) is int and 1 <= value <= 4_294_967_294

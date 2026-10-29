@@ -21,12 +21,14 @@ from intentfabric.domain.validation import (
 from intentfabric.domain.topology import OsFamily, TopologyCatalog, TopologyLink, TopologyNode
 
 from intentfabric.domain.intent import (
-    AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, ServiceHop, ServiceIntent,
-    TransitHop, is_valid_asn, is_valid_route_distinguisher_or_target,
+    AccessHop, DiaIntent, L2VpnIntent, L3VpnIntent, ProviderEdgeHop, ServiceHop, ServiceIntent,
+    TransitHop, is_valid_asn, is_valid_evi_id, is_valid_pseudowire_id,
+    is_valid_route_distinguisher_or_target,
 )
 
 __all__ = (
-    "AccessHop", "DiaIntent", "L3VpnIntent", "ProviderEdgeHop", "ServiceHop", "ServiceIntent",
+    "AccessHop", "DiaIntent", "L2VpnIntent", "L3VpnIntent", "ProviderEdgeHop", "ServiceHop", "ServiceIntent",
+    "is_valid_evi_id", "is_valid_pseudowire_id",
     "TransitHop", "is_valid_asn", "is_valid_route_distinguisher_or_target", "QosRates",
     "WanAddresses", "derive_qos_rates", "derive_subinterface_name", "derive_wan_addresses",
     "OsFamily", "TopologyCatalog", "TopologyLink", "TopologyNode",
