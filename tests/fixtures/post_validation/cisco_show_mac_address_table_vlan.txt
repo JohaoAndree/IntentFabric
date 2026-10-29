@@ -1,0 +1,2 @@
+Vlan Mac Address Type Ports
+210 0200.0000.0001 DYNAMIC Gi1/0/10

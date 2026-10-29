@@ -7,10 +7,36 @@ from intentfabric.domain.template_key import TemplateKey
 
 if TYPE_CHECKING:
     from intentfabric.domain.deployment import NodeDeploymentResult
+    from intentfabric.domain.post_validation import PostValidationReport
 
 
 class IntentFabricError(Exception):
     """Agrupa los errores explicitos del framework."""
+
+
+class PostValidationContractError(IntentFabricError):
+    """Indica una violacion de las invariantes de validacion posdespliegue."""
+
+
+class EphemeralProbeCleanupError(IntentFabricError):
+    """Identifica una sonda SVI cuya eliminacion no pudo confirmarse."""
+
+    def __init__(self, message: str, *, node_id: str, vlan_id: int) -> None:
+        self.node_id = node_id
+        self.vlan_id = vlan_id
+        super().__init__(message)
+
+
+class PostValidationFailedError(IntentFabricError):
+    """Expone el reporte completo de una validacion posdespliegue rechazada."""
+
+    def __init__(self, report: PostValidationReport) -> None:
+        self.report = report
+        super().__init__(
+            f"service_id={report.service_id!r}: status={report.status.value}; "
+            f"root_cause_step={report.root_cause_step}; "
+            f"root_cause_node_id={report.root_cause_node_id!r}"
+        )
 
 
 class DeviceTransportError(IntentFabricError):

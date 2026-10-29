@@ -1,0 +1,2 @@
+Local intf Local circuit Dest address VC ID Status
+Gi0/0/4.310 Eth VLAN 310 192.0.2.3 310 UP

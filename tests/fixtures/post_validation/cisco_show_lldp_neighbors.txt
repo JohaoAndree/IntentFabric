@@ -1,0 +1,2 @@
+Device ID Local Intf Hold-time Capability Port ID
+SW-LAB Gi1/0/10 150 R Gi1/0/24

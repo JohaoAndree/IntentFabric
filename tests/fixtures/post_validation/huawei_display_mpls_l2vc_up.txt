@@ -1,0 +1,4 @@
+*client interface : GigabitEthernet0/0/0.310
+session state : up
+VC state : up
+VC ID : 310

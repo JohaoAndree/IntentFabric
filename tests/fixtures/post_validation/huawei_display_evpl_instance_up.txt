@@ -1,0 +1,6 @@
+  EVPL instance ID       : 310
+  VPN-Instance           : VPWS_310
+  Interface name         : GigabitEthernet0/0/0.310
+  Evpl State             : up
+  Local service ID       : 3101
+  Remote service ID      : 3102

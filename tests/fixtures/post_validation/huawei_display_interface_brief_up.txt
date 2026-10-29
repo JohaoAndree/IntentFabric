@@ -1,0 +1,2 @@
+Interface PHY Protocol InUti OutUti inErrors outErrors
+GigabitEthernet0/0/0.210 up up(s) 0% 0% 0 0

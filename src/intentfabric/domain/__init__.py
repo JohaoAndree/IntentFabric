@@ -9,6 +9,12 @@ from intentfabric.domain.deployment import (
     contains_cli_error, find_cli_error_line,
 )
 from intentfabric.domain.errors import CliCommandRejectedError, DeploymentError, DeviceTransportError
+from intentfabric.domain.errors import EphemeralProbeCleanupError, PostValidationContractError, PostValidationFailedError
+from intentfabric.domain.post_validation import (
+    ExpectedState, ObservedState, PostValidationReport, ServiceOperationalStatus,
+    TriageStepName, TriageStepResult, build_expected_state,
+    build_ephemeral_svi_provision_commands, build_ephemeral_svi_teardown_commands,
+)
 from intentfabric.domain.errors import IntentFabricError, PreValidationFailedError, TemplateRenderError
 from intentfabric.domain.errors import (
     InvalidInterfaceNameError, TopologyPathResolutionError, TopologyValidationError,
@@ -32,6 +38,10 @@ from intentfabric.domain.intent import (
 )
 
 __all__ = (
+    "EphemeralProbeCleanupError", "PostValidationContractError", "PostValidationFailedError", "ExpectedState", "ObservedState",
+    "PostValidationReport", "ServiceOperationalStatus", "TriageStepName", "TriageStepResult",
+    "build_expected_state", "build_ephemeral_svi_provision_commands",
+    "build_ephemeral_svi_teardown_commands",
     "CommandExecutionRecord", "DeviceCredentials", "NodeDeploymentResult", "ServiceDeploymentReport",
     "contains_cli_error", "find_cli_error_line", "CliCommandRejectedError", "DeploymentError",
     "DeviceTransportError",

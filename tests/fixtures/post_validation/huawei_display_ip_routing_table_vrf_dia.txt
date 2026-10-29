@@ -1,0 +1,2 @@
+Destination/Mask Proto Pre Cost Flags NextHop Interface
+10.50.1.8/29 Static 60 0 RD 192.0.2.2 GigabitEthernet0/0/0.210

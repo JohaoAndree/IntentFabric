@@ -9,9 +9,11 @@ from intentfabric.application.topology import TopologyPathResolver, TopologyRepo
 from intentfabric.application.deployment import DeploymentService
 from intentfabric.application.preflight_online import OnlinePreFlightChecker
 from intentfabric.application.transport import DeviceTransportPort
+from intentfabric.application.post_validation import PostValidationTriageService
 
 
 __all__ = (
+    "PostValidationTriageService",
     "DeploymentService", "OnlinePreFlightChecker", "DeviceTransportPort",
     "TopologyPathResolver", "TopologyRepositoryPort",
     "DeterministicGeneratorService", "TemplateRendererPort",
