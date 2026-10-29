@@ -1,0 +1,12 @@
+vlan 410
+ description L2VPN-CORP-000002
+quit
+interface GigabitEthernet0/0/1
+ description L2VPN-CORP-000002
+ port link-type access
+ port default vlan 410
+ undo shutdown
+quit
+interface GigabitEthernet0/0/8
+ port trunk allow-pass vlan 410
+quit

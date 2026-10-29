@@ -9,7 +9,7 @@ import pytest
 from intentfabric import bootstrap
 from intentfabric.adapters.intent_file_loader import load_intent_mapping
 from intentfabric.domain.errors import IntentParseError, PreValidationFailedError, TopologyValidationError
-from intentfabric.domain.intent import DiaIntent, L3VpnIntent
+from intentfabric.domain.intent import DiaIntent, L2VpnIntent, L3VpnIntent
 from intentfabric.domain.topology import TopologyCatalog
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.vendors import cisco, huawei
@@ -52,10 +52,10 @@ def test_bootstrap_does_not_share_custom_vendors(monkeypatch: pytest.MonkeyPatch
 
 
 def test_bootstrap_keeps_unknown_service_diagnostic() -> None:
-    """Informa DIA y L3VPN al solicitar un servicio desconocido."""
+    """Informa todos los servicios registrados al solicitar uno desconocido."""
     with pytest.raises(IntentParseError) as error:
         bootstrap.build_plugin_catalog().parse_intent({"service_type": "OTHER"})
-    assert str(error.value) == "service_type: servicio desconocido 'OTHER'; registrados: DIA, L3VPN"
+    assert str(error.value) == "service_type: servicio desconocido 'OTHER'; registrados: DIA, L2VPN, L3VPN"
 
 
 def test_bootstrap_injects_the_same_custom_inventory_into_parser_and_validator() -> None:
@@ -110,6 +110,46 @@ def test_bootstrap_l3vpn_uses_custom_pe_asn_and_registered_vendors(monkeypatch: 
     intent = catalog.parse_intent(raw)
     assert intent.pe_asn == 65001
     assert "bgp 65001\n" in bootstrap.build_generator(catalog, topology=topology).generate(intent).artifacts[-1].rendered_text
+    monkeypatch.setattr(bootstrap, "VENDOR_PACKAGES", (cisco,))
+    with pytest.raises(IntentParseError, match=r"^hops\[1\].vendor:"):
+        bootstrap.build_plugin_catalog(topology).parse_intent(raw)
+
+
+@pytest.mark.parametrize("service_type", ("L2VPN", "l2vpn", " L2Vpn "))
+@pytest.mark.parametrize("variant", ("default", "evpn_vpws", "martini_ldp"))
+def test_bootstrap_integrates_l2vpn_parser_validation_qos_and_variants(service_type: str, variant: str) -> None:
+    """Integra parsing, validacion y generacion L2VPN con QoS decimal por variante."""
+    path = Path(__file__).resolve().parents[2] / "examples/intents/l2vpn_valid.json"
+    raw = dict(load_intent_mapping(path)) | {"service_type": service_type}
+    catalog = bootstrap.create_default_catalog()
+    intent = catalog.parse_intent(raw)
+    assert isinstance(intent, L2VpnIntent)
+    assert str(intent.remote_pe_ip) == "10.255.0.1"
+    generator = bootstrap.create_default_generator(catalog)
+    plan = generator.generate(intent, variant=variant)
+    assert tuple(artifact.node_id for artifact in plan.artifacts) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
+    assert " car cir 100000 pir 100000\n" in plan.artifacts[-1].rendered_text
+    with pytest.raises(PreValidationFailedError) as error:
+        generator.generate(replace(intent, pw_id=0), variant=variant)
+    assert "INVALID_PW_ID_RANGE" in {issue.code for issue in error.value.report.errors}
+
+
+def test_bootstrap_l2vpn_propagates_custom_inventory_and_registered_vendors(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Propaga Loopback0 personalizado y exige vendors registrados en L2VPN."""
+    from ipaddress import IPv4Address
+
+    original = bootstrap.load_default_topology()
+    topology = replace(original, nodes=tuple(
+        replace(node, loopback0_ip=IPv4Address("10.255.1.1")) if node.node_id == "PE1-TEST" else node
+        for node in original.nodes
+    ))
+    path = Path(__file__).resolve().parents[2] / "examples/intents/l2vpn_valid.json"
+    raw = load_intent_mapping(path)
+    catalog = bootstrap.build_plugin_catalog(topology)
+    intent = catalog.parse_intent(raw)
+    assert intent.remote_pe_ip == IPv4Address("10.255.1.1")
+    rendered = bootstrap.build_generator(catalog, topology=topology).generate(intent, variant="martini_ldp").artifacts[-1].rendered_text
+    assert " mpls l2vc 10.255.1.1 310\n" in rendered
     monkeypatch.setattr(bootstrap, "VENDOR_PACKAGES", (cisco,))
     with pytest.raises(IntentParseError, match=r"^hops\[1\].vendor:"):
         bootstrap.build_plugin_catalog(topology).parse_intent(raw)

@@ -1,0 +1,21 @@
+l2vpn evpn instance 410 point-to-point
+ rd 65000:410
+ route-target export 65000:310
+ route-target import 65000:310
+!
+policy-map QOS_L2VPN_200M
+ class class-default
+  police rate 200000000 bps peak-rate 200000000 bps
+!
+interface GigabitEthernet0/0/4.410
+ description L2VPN-CORP-000002
+ encapsulation dot1Q 410
+ service-policy input QOS_L2VPN_200M
+ service-policy output QOS_L2VPN_200M
+ no shutdown
+!
+l2vpn xconnect context VPWS_410
+ evpn instance 410 point-to-point
+ interface GigabitEthernet0/0/4.410
+ vpws context VPWS_410
+  service target 3101 source 3102

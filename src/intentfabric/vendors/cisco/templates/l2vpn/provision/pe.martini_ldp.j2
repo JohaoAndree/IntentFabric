@@ -1,0 +1,11 @@
+policy-map {{ qos_policy }}
+ class class-default
+  police rate {{ cir_bps }} bps peak-rate {{ pir_bps }} bps
+!
+interface {{ pe_subinterface }}
+ description {{ description }}
+ encapsulation dot1Q {{ vlan_id }}
+ xconnect {{ remote_pe_ip }} {{ pw_id }} encapsulation mpls
+ service-policy input {{ qos_policy }}
+ service-policy output {{ qos_policy }}
+ no shutdown

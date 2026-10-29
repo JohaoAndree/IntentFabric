@@ -1,0 +1,9 @@
+vlan 410
+ name L2VPN-CORP-000002
+exit
+interface GigabitEthernet1/0/11
+ switchport trunk allowed vlan add 410
+exit
+interface GigabitEthernet1/0/25
+ switchport trunk allowed vlan add 410
+exit

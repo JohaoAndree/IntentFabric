@@ -6,6 +6,13 @@ from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 VENDOR_DEFINITION = VendorDefinition(vendor_id="cisco", templates={
     TemplateKey(service_type, operation, role): f"templates/{service_type.lower()}/{operation.value}/{role.value}.j2"
     for service_type in ("DIA", "L3VPN") for operation in Operation for role in NodeRole
+} | {
+    TemplateKey("L2VPN", operation, role, variant): (
+        f"templates/l2vpn/{operation.value}/{role.value}"
+        f"{'' if variant == 'default' else f'.{variant}'}.j2"
+    )
+    for operation in Operation for role in NodeRole
+    for variant in ("default", "evpn_vpws", "martini_ldp")
 })
 
 

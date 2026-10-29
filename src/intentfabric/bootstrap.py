@@ -15,6 +15,9 @@ from intentfabric.domain.topology import TopologyCatalog
 from intentfabric.services.dia.context_builder import build_dia_hop_context
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 from intentfabric.services.dia.validator import validate_dia_intent_semantics
+from intentfabric.services.l2vpn import (
+    L2VpnIntentParser, build_l2vpn_hop_context, validate_l2vpn_semantics,
+)
 from intentfabric.services.l3vpn import (
     L3VpnIntentParser, build_l3vpn_hop_context, validate_l3vpn_semantics,
 )
@@ -49,6 +52,9 @@ def build_plugin_catalog(topology: TopologyCatalog | None = None) -> PluginCatal
     catalog.register_service(L3VpnIntentParser(known_vendors=catalog.vendor_ids(), topology=topology))
     catalog.register_service_validator(L3VpnIntentParser.service_type, validate_l3vpn_semantics)
     catalog.register_context_builder(L3VpnIntentParser.service_type, build_l3vpn_hop_context)
+    catalog.register_service(L2VpnIntentParser(known_vendors=catalog.vendor_ids(), topology=topology))
+    catalog.register_service_validator(L2VpnIntentParser.service_type, validate_l2vpn_semantics)
+    catalog.register_context_builder(L2VpnIntentParser.service_type, build_l2vpn_hop_context)
     if "cisco" in catalog.vendor_ids():
         catalog.register_vendor_qos_builder("cisco", cisco.build_cisco_qos_context)
     if "huawei" in catalog.vendor_ids():

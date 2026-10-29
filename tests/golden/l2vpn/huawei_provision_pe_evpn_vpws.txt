@@ -1,0 +1,25 @@
+evpn vpn-instance VPWS_310 vpws
+ route-distinguisher 65000:310
+ vpn-target 65000:310 export-extcommunity
+ vpn-target 65000:310 import-extcommunity
+#
+evpl instance 310
+ evpn binding vpn-instance VPWS_310
+ local-service-id 3101 remote-service-id 3102
+#
+traffic classifier QOS_L2VPN_100M_CLASS operator or
+ if-match any
+#
+traffic behavior QOS_L2VPN_100M_BEHAVIOR
+ car cir 100000 pir 100000
+#
+traffic policy QOS_L2VPN_100M
+ classifier QOS_L2VPN_100M_CLASS behavior QOS_L2VPN_100M_BEHAVIOR
+#
+interface GigabitEthernet0/0/0.310
+ description L2VPN-CORP-000001
+ dot1q termination vid 310
+ evpl instance 310
+ traffic-policy QOS_L2VPN_100M inbound
+ traffic-policy QOS_L2VPN_100M outbound
+ undo shutdown

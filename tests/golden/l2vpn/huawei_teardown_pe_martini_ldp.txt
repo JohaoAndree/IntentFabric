@@ -1,0 +1,5 @@
+undo interface GigabitEthernet0/0/0.310
+#
+undo traffic policy QOS_L2VPN_100M
+undo traffic behavior QOS_L2VPN_100M_BEHAVIOR
+undo traffic classifier QOS_L2VPN_100M_CLASS

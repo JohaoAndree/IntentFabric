@@ -1,0 +1,16 @@
+traffic classifier QOS_L2VPN_100M_CLASS operator or
+ if-match any
+#
+traffic behavior QOS_L2VPN_100M_BEHAVIOR
+ car cir 100000 pir 100000
+#
+traffic policy QOS_L2VPN_100M
+ classifier QOS_L2VPN_100M_CLASS behavior QOS_L2VPN_100M_BEHAVIOR
+#
+interface GigabitEthernet0/0/0.310
+ description L2VPN-CORP-000001
+ dot1q termination vid 310
+ mpls l2vc 10.255.0.1 310
+ traffic-policy QOS_L2VPN_100M inbound
+ traffic-policy QOS_L2VPN_100M outbound
+ undo shutdown

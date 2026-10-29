@@ -1,0 +1,9 @@
+vlan 310
+ description L2VPN-CORP-000001
+quit
+interface GigabitEthernet1/0/24
+ port trunk allow-pass vlan 310
+quit
+interface GigabitEthernet1/0/25
+ port trunk allow-pass vlan 310
+quit

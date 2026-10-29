@@ -1,0 +1,21 @@
+l2vpn evpn instance {{ evi_id }} point-to-point
+ rd {{ rd }}
+ route-target export {{ rt_export }}
+ route-target import {{ rt_import }}
+!
+policy-map {{ qos_policy }}
+ class class-default
+  police rate {{ cir_bps }} bps peak-rate {{ pir_bps }} bps
+!
+interface {{ pe_subinterface }}
+ description {{ description }}
+ encapsulation dot1Q {{ vlan_id }}
+ service-policy input {{ qos_policy }}
+ service-policy output {{ qos_policy }}
+ no shutdown
+!
+l2vpn xconnect context {{ instance_name }}
+ evpn instance {{ evi_id }} point-to-point
+ interface {{ pe_subinterface }}
+ vpws context {{ instance_name }}
+  service target {{ remote_ac_id }} source {{ local_ac_id }}

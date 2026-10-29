@@ -1,0 +1,16 @@
+service_type: "L2VPN"
+description: "L2VPN-CORP-000001"
+vlan_id: 310
+bandwidth_mbps: 100
+qos_policy: "QOS_L2VPN_100M"
+pw_id: 310
+evi_id: 310
+local_ac_id: 3101
+remote_ac_id: 3102
+rd: "65000:310"
+rt_import: "65000:310"
+rt_export: "65000:310"
+access_node_id: "S3-9306-TEST"
+access_interface: "GigabitEthernet1/0/1"
+pe_node_id: "PE2-TEST"
+remote_pe_node_id: "PE1-TEST"

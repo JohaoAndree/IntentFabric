@@ -1,0 +1,9 @@
+undo interface {{ pe_subinterface }}
+#
+undo evpl instance {{ evi_id }}
+#
+undo evpn vpn-instance {{ instance_name }}
+#
+undo traffic policy {{ qos_policy }}
+undo traffic behavior {{ qos_policy }}_BEHAVIOR
+undo traffic classifier {{ qos_policy }}_CLASS
