@@ -39,8 +39,8 @@ def _transport_error_types() -> tuple[type[Exception], ...]:
     except ModuleNotFoundError as error:
         if error.name not in ("netmiko", "paramiko"):
             raise
-        return OSError, EOFError
-    return OSError, EOFError, NetmikoBaseException, SSHException
+        return OSError, EOFError, ValueError
+    return OSError, EOFError, ValueError, NetmikoBaseException, SSHException
 
 
 class NetmikoTransportAdapter:

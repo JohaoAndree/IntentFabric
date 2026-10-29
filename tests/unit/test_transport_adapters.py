@@ -121,6 +121,18 @@ def test_commit_rejection_is_detected_without_a_configuration_trailing_newline()
     assert caught.value.raw_output == "configuredError: rejected"
 
 
+def test_netmiko_native_commit_value_error_is_wrapped() -> None:
+    """Traduce el ValueError que Netmiko puede emitir al fallar un commit Huawei."""
+    adapter, factory, connection, node = _netmiko()
+    failure = ValueError("lab commit failure")
+    connection.commit.side_effect = failure
+    with pytest.raises(DeviceTransportError) as caught:
+        adapter.push_configuration(node, ("vlan 210",))
+    assert caught.value.__cause__ is failure
+    assert caught.value.node_id == node.node_id
+    factory.return_value.__exit__.assert_called_once()
+
+
 @pytest.mark.parametrize("method", ["connect", "show", "config", "commit", "exit"])
 def test_netmiko_wraps_transport_failures_and_closes_open_sessions(method: str) -> None:
     """Traduce fallos de conexion y de interaccion conservando la causa."""
