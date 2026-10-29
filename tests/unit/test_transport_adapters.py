@@ -1,6 +1,7 @@
 """Garantiza contratos de transporte, confirmacion y fallos sin abrir sockets."""
 
 import builtins
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -11,14 +12,15 @@ from intentfabric.adapters import (
 from intentfabric.bootstrap import load_default_topology
 from intentfabric.domain import (
     CliCommandRejectedError, DeviceCredentials, DeviceTransportError, OsFamily,
+    TopologyNode,
 )
 
 
-def _node(node_id: str = "PE2-TEST"):
+def _node(node_id: str = "PE2-TEST") -> TopologyNode:
     return load_default_topology().get_node(node_id)
 
 
-def _netmiko(node_id: str = "PE2-TEST"):
+def _netmiko(node_id: str = "PE2-TEST") -> tuple[NetmikoTransportAdapter, MagicMock, MagicMock, TopologyNode]:
     factory = MagicMock()
     connection = factory.return_value.__enter__.return_value
     connection.send_command.return_value = "operational\r\n"
@@ -67,7 +69,7 @@ def test_injected_connection_does_not_import_netmiko(monkeypatch: pytest.MonkeyP
     """Permite usar una factoria inyectada sin resolver Netmiko."""
     original_import = builtins.__import__
 
-    def guarded_import(name, *args, **kwargs):
+    def guarded_import(name: str, *args: Any, **kwargs: Any) -> Any:
         if name.startswith("netmiko"):
             raise AssertionError("Netmiko debe resolverse solo con la factoria por defecto")
         return original_import(name, *args, **kwargs)
@@ -76,6 +78,18 @@ def test_injected_connection_does_not_import_netmiko(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(builtins, "__import__", guarded_import)
     assert adapter.execute_show(node, "display vlan") == "operational\n"
     assert adapter.push_configuration(node, ("vlan 210",))[1] is True
+
+
+def test_default_factory_resolves_connecthandler_only_when_connecting(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Resuelve ConnectHandler al consultar sin conectar durante la construccion."""
+    netmiko = pytest.importorskip("netmiko")
+    factory = MagicMock()
+    factory.return_value.__enter__.return_value.send_command.return_value = "ok\n"
+    monkeypatch.setattr(netmiko, "ConnectHandler", factory)
+    adapter = NetmikoTransportAdapter(DeviceCredentials("lab-user", "lab-password"))
+    factory.assert_not_called()
+    assert adapter.execute_show(_node(), "display vlan") == "ok\n"
+    factory.assert_called_once()
 
 
 @pytest.mark.parametrize("method", ["show", "config", "commit"])
@@ -95,6 +109,16 @@ def test_netmiko_cli_rejection_preserves_transcript_and_prevents_success(method:
     if method != "commit":
         connection.commit.assert_not_called()
     factory.return_value.__exit__.assert_called_once()
+
+
+def test_commit_rejection_is_detected_without_a_configuration_trailing_newline() -> None:
+    """Detecta rechazos de commit independientemente del terminador de la salida previa."""
+    adapter, factory, connection, node = _netmiko()
+    connection.send_config_set.return_value = "configured"
+    connection.commit.return_value = "Error: rejected"
+    with pytest.raises(CliCommandRejectedError) as caught:
+        adapter.push_configuration(node, ("vlan 210",))
+    assert caught.value.raw_output == "configuredError: rejected"
 
 
 @pytest.mark.parametrize("method", ["connect", "show", "config", "commit", "exit"])

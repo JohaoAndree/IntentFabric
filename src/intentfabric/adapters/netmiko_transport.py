@@ -108,7 +108,11 @@ class NetmikoTransportAdapter:
                     commit_output = connection.commit().replace("\r\n", "\n")
                     connection.exit_config_mode()
                     output += commit_output
-                    self._require_accepted(output, node, command_block)
+                    error_line = find_cli_error_line(commit_output, vendor=node.vendor)
+                    if error_line is not None:
+                        raise CliCommandRejectedError(
+                            error_line, node_id=node.node_id, command=command_block, raw_output=output,
+                        )
                 return output, committed
         except _transport_error_types() as error:
             raise DeviceTransportError(str(error), node_id=node.node_id, command=command_block) from error
