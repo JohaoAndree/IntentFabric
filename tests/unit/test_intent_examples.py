@@ -16,24 +16,32 @@ def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
     json_raw = load_intent_mapping(directory / "dia_valid.json")
     yaml_raw = load_intent_mapping(directory / "dia_valid.yaml")
     expected = DiaIntent(
-        description="LAB#INTE#0001", vlan_id=3001, vrf_name="LAB-INTERNET",
-        wan_network=IPv4Network("10.255.0.0/30"), lan_network=IPv4Network("203.0.113.0/29"),
-        bandwidth_mbps=50, qos_policy_name="LAB_50MB_PARENT",
+        description="TEST-0000000001", vlan_id=10, vrf_name="TEST-INTERNET",
+        wan_network=IPv4Network("192.168.10.0/30"), lan_network=IPv4Network("10.50.1.8/29"),
+        bandwidth_mbps=100, qos_policy_name="TEST_POLICY",
         access=AccessHop(
-            "huawei", IPv4Address("192.0.2.11"),
-            "GigabitEthernet0/0/1", "GigabitEthernet0/0/24",
+            "S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"),
+            "GigabitEthernet1/0/1", "GigabitEthernet1/0/10",
         ),
         transits=(TransitHop(
-            "cisco", IPv4Address("192.0.2.12"),
-            "GigabitEthernet1/0/23", "GigabitEthernet1/0/24",
+            "S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"),
+            "GigabitEthernet1/0/24", "GigabitEthernet1/0/25",
         ),),
         provider_edge=ProviderEdgeHop(
-            "huawei", IPv4Address("192.0.2.21"), "GigabitEthernet0/0/1",
+            "PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0",
         ),
     )
     assert json_raw == yaml_raw
     assert catalog.parse_intent(json_raw) == catalog.parse_intent(yaml_raw) == expected
     assert catalog.parse_intent(json_raw) == catalog.parse_intent(json_raw)
-    assert derive_wan_addresses(expected.wan_network).pe_address == IPv4Address("10.255.0.1")
-    assert derive_qos_rates(expected.bandwidth_mbps).cir_kbps == 50_000
-    assert derive_qos_rates(expected.bandwidth_mbps).pir_kbps == 50_000
+    assert derive_wan_addresses(expected.wan_network).pe_address == IPv4Address("192.168.10.1")
+    assert derive_qos_rates(expected.bandwidth_mbps).cir_kbps == 100_000
+    assert derive_qos_rates(expected.bandwidth_mbps).pir_kbps == 100_000
+
+
+def test_examples_contain_only_service_parameters_and_demarcations() -> None:
+    """Excluye gestion, fabricantes y saltos fisicos de ambos ejemplos declarativos."""
+    directory = Path(__file__).resolve().parents[2] / "examples/intents"
+    for suffix in ("json", "yaml"):
+        raw = load_intent_mapping(directory / f"dia_valid.{suffix}")
+        assert set(raw) == {"service_type", "description", "vlan_id", "vrf_name", "wan_subnet", "lan_subnet", "bandwidth_mbps", "qos_policy_name", "access_node_id", "access_interface", "pe_node_id"}

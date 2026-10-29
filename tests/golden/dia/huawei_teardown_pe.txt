@@ -1,2 +1,2 @@
-undo ip route-static vpn-instance LAB-INTERNET 203.0.113.0 255.255.255.248 10.255.0.2
-undo interface GigabitEthernet0/0/1.3001
+undo ip route-static vpn-instance TEST-INTERNET 10.50.1.8 255.255.255.248 192.168.10.2
+undo interface GigabitEthernet0/0/0.10

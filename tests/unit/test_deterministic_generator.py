@@ -4,16 +4,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import FrozenInstanceError, dataclass, fields, replace
 from ipaddress import IPv4Address, IPv4Network
 import json
+from pathlib import Path
 
 import jinja2
 import pytest
 
 from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
+from intentfabric.adapters.intent_file_loader import load_intent_mapping
 from intentfabric.application.plugin_catalog import PluginCatalog
 from intentfabric.application.generation import DeterministicGeneratorService
 from intentfabric.application.pre_validation import PreValidationService
 from intentfabric.bootstrap import (
     build_generator, build_plugin_catalog, create_default_catalog, create_default_generator,
+    load_default_topology,
 )
 from intentfabric.domain.errors import (
     PluginRegistrationError, PreValidationFailedError, TemplateNotFoundError, TemplateRenderError,
@@ -25,7 +28,8 @@ from intentfabric.domain.generation import (
 )
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
-from intentfabric.domain.validation import ValidationReport
+from intentfabric.domain.topology import TopologyLink
+from intentfabric.domain.validation import ValidationIssue, ValidationReport
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.services.dia.context_builder import build_dia_hop_context
 from intentfabric.services.dia.intent_parser import DiaIntentParser
@@ -39,9 +43,9 @@ def _intent(vendor_id: str = "cisco") -> DiaIntent:
         wan_network=IPv4Network("10.255.0.0/30"),
         lan_network=IPv4Network("203.0.113.0/29"), bandwidth_mbps=100,
         qos_policy_name="LAB_100MB_PARENT",
-        access=AccessHop(vendor_id, IPv4Address("192.0.2.11"), "client", "uplink"),
-        transits=(TransitHop(vendor_id, IPv4Address("192.0.2.12"), "down", "up"),),
-        provider_edge=ProviderEdgeHop(vendor_id, IPv4Address("192.0.2.21"), "parent"),
+        access=AccessHop("LAB-ACCESS", vendor_id, IPv4Address("192.0.2.11"), "GigabitEthernet0/0/1", "GigabitEthernet0/0/24"),
+        transits=(TransitHop("LAB-TRANSIT", vendor_id, IPv4Address("192.0.2.12"), "GigabitEthernet1/0/23", "GigabitEthernet1/0/24"),),
+        provider_edge=ProviderEdgeHop("LAB-PE", vendor_id, IPv4Address("192.0.2.21"), "GigabitEthernet0/0/1"),
     )
 
 
@@ -202,12 +206,12 @@ def test_service_context_exposes_common_fields_and_role_interfaces(operation: Op
         }
         assert "vlan_name" not in context
         assert "cir_bps" not in context and "cir_kbps" not in context
-    assert contexts[0]["client_interface"] == "client"
-    assert contexts[0]["uplink_interface"] == "uplink"
-    assert contexts[1]["downstream_interface"] == contexts[1]["ingress_interface"] == "down"
-    assert contexts[1]["upstream_interface"] == contexts[1]["egress_interface"] == "up"
+    assert contexts[0]["client_interface"] == "GigabitEthernet0/0/1"
+    assert contexts[0]["uplink_interface"] == "GigabitEthernet0/0/24"
+    assert contexts[1]["downstream_interface"] == contexts[1]["ingress_interface"] == "GigabitEthernet1/0/23"
+    assert contexts[1]["upstream_interface"] == contexts[1]["egress_interface"] == "GigabitEthernet1/0/24"
     assert {key: value for key, value in contexts[2].items() if key not in contexts[0]} == {
-        "pe_interface": "parent", "pe_subinterface": "parent.3001",
+        "pe_interface": "GigabitEthernet0/0/1", "pe_subinterface": "GigabitEthernet0/0/1.3001",
         "vrf_name": "LAB-INTERNET", "qos_policy": "LAB_100MB_PARENT", "bandwidth_mbps": 100,
         "wan_network": "10.255.0.0/30", "wan_netmask": "255.255.255.252", "wan_prefixlen": 30,
         "wan_pe_ip": "10.255.0.1", "wan_ce_ip": "10.255.0.2", "lan_network": "203.0.113.0/29",
@@ -389,7 +393,7 @@ def test_generator_forwards_variant_and_blocks_missing_templates() -> None:
 def test_generator_keeps_route_order_filters_comments_and_hashes_full_text() -> None:
     """Conserva el orden de transitos y el texto completo al extraer comandos CLI."""
     intent = _intent()
-    second_transit = replace(intent.transits[0], management_ip=IPv4Address("192.0.2.13"))
+    second_transit = replace(intent.transits[0], node_id="LAB-TRANSIT-2", management_ip=IPv4Address("192.0.2.13"))
     intent = replace(intent, transits=(second_transit, intent.transits[0]))
     catalog = build_plugin_catalog()
     renderer = _RecordingRenderer()
@@ -398,7 +402,7 @@ def test_generator_keeps_route_order_filters_comments_and_hashes_full_text() -> 
     )
     assert plan.operation is Operation.TEARDOWN
     assert tuple(artifact.node_id for artifact in plan.artifacts) == (
-        "192.0.2.11", "192.0.2.13", "192.0.2.12", "192.0.2.21",
+        "LAB-ACCESS", "LAB-TRANSIT-2", "LAB-TRANSIT", "LAB-PE",
     )
     for index, artifact in enumerate(plan.artifacts):
         assert artifact.hop_index == index
@@ -413,7 +417,6 @@ def test_generator_keeps_route_order_filters_comments_and_hashes_full_text() -> 
 
 @dataclass(frozen=True)
 class _IdentifiedAccess(AccessHop):
-    node_id: str | None = None
     hostname: str | None = None
 
 
@@ -424,28 +427,29 @@ class _IdentifiedIntent(DiaIntent):
 
 @pytest.mark.parametrize(
     ("node_id", "hostname", "expected_id"),
-    [("LAB-ACCESS", "LAB-HOST", "LAB-ACCESS"), (None, "LAB-HOST", "LAB-HOST"),
-     (None, None, "192.0.2.11")],
+    [("LAB-ACCESS", "LAB-HOST", "LAB-ACCESS"), ("LAB-OTHER", "LAB-HOST", "LAB-OTHER"),
+     ("LAB-ACCESS", None, "LAB-ACCESS")],
 )
 def test_generator_uses_explicit_service_and_node_identity_when_available(
     node_id: str | None, hostname: str | None, expected_id: str,
 ) -> None:
-    """Prioriza service_id y node_id, con hostname e IP como alternativas de identidad."""
+    """Conserva service_id y la identidad logica requerida de cada salto."""
     base = _intent()
     intent = _IdentifiedIntent(
         **{field.name: getattr(base, field.name) for field in fields(base)},
         service_id="LAB-SERVICE",
     )
     intent = replace(intent, access=_IdentifiedAccess(
-        "cisco", base.access.management_ip, "client", "uplink", node_id, hostname,
+        node_id, "cisco", base.access.management_ip, "GigabitEthernet0/0/1", "GigabitEthernet0/0/24", hostname,
     ))
-    plan = build_generator().generate(intent)
+    generator = build_generator(pre_validator=PreValidationService(build_plugin_catalog()))
+    plan = generator.generate(intent)
     assert plan.service_id == "LAB-SERVICE"
     assert plan.artifacts[0].node_id == expected_id
-    assert build_generator().generate(base).service_id == base.description
+    assert generator.generate(base).service_id == base.description
 
 
-def test_factory_honors_injected_catalog_source_and_prevalidator() -> None:
+def test_factory_honors_injected_catalog_source_and_prevalidator(monkeypatch: pytest.MonkeyPatch) -> None:
     """Usa los componentes suministrados y propaga operacion y variante al validador."""
     class RecordingPreValidator(PreValidationService):
         """Conserva la solicitud de validacion ademas de ejecutar las reglas reales."""
@@ -461,6 +465,9 @@ def test_factory_honors_injected_catalog_source_and_prevalidator() -> None:
     catalog = build_plugin_catalog()
     calls: list[tuple[DiaIntent, tuple[str, ...], str]] = []
     source = _TemplateSource("{{ operation }} {{ description }}\n")
+    def reject_inventory_read() -> None:
+        raise AssertionError("La composicion completamente inyectada no requiere leer el inventario")
+    monkeypatch.setattr("intentfabric.bootstrap.load_default_topology", reject_inventory_read)
     generator = build_generator(catalog, source, RecordingPreValidator(catalog))
     intent = _intent()
     plan = generator.generate(intent, operation="teardown")
@@ -469,3 +476,45 @@ def test_factory_honors_injected_catalog_source_and_prevalidator() -> None:
     assert all(artifact.rendered_text == "teardown LAB#INTE#0001\n" for artifact in plan.artifacts)
     assert create_default_catalog is build_plugin_catalog
     assert create_default_generator is build_generator
+
+
+@pytest.mark.parametrize("operation", tuple(Operation))
+@pytest.mark.parametrize("reverse_links", (False, True))
+@pytest.mark.parametrize("customer_port", ("Gi1/0/10", "Gi1/0/2"))
+def test_programmatic_client_trunks_block_preflight_and_generation(
+    operation: Operation, reverse_links: bool, customer_port: str,
+) -> None:
+    """Rechaza generar sobre cualquier troncal de cliente antes de Pre-Flight y renderizado."""
+    topology = load_default_topology()
+    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE0/0/2"))
+    if reverse_links:
+        links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
+                      for link in reversed(links))
+    topology = replace(topology, links=links)
+    catalog = build_plugin_catalog(topology)
+    path = Path(__file__).resolve().parents[2] / "examples/intents/dia_valid.json"
+    intent = catalog.parse_intent(load_intent_mapping(path))
+    intent = replace(intent, access=replace(intent.access, customer_port=customer_port))
+    preflight_calls: list[DiaIntent] = []
+
+    class PreFlightRecorder:
+        """Registra cualquier invocacion indebida a Pre-Flight."""
+
+        def check_preflight(self, candidate: DiaIntent) -> tuple[ValidationIssue, ...]:
+            """Conserva la intencion recibida sin emitir hallazgos adicionales."""
+            preflight_calls.append(candidate)
+            return ()
+
+    source = _TemplateSource("{{ node_id }}\n")
+    validator = PreValidationService(catalog, PreFlightRecorder(), topology=topology)
+    generator = build_generator(catalog, source, validator, topology=topology)
+    with pytest.raises(PreValidationFailedError) as error:
+        generator.generate(intent, operation=operation)
+    report = error.value.report
+    assert not report.is_valid
+    assert not report.preflight_executed
+    assert [(issue.code, issue.stage.value, issue.field_path, issue.node_id) for issue in report.errors] == [
+        ("TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", "static_offline", "hops[0].customer_port", intent.access.node_id),
+    ]
+    assert preflight_calls == []
+    assert source.calls == []

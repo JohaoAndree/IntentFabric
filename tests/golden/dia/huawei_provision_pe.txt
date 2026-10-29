@@ -1,20 +1,20 @@
-traffic classifier LAB_100MB_PARENT operator or
+traffic classifier TEST_POLICY operator or
  if-match any
 quit
-traffic behavior LAB_100MB_PARENT
+traffic behavior TEST_POLICY
  car cir 100000 pir 100000
 quit
-traffic policy LAB_100MB_PARENT
- classifier LAB_100MB_PARENT behavior LAB_100MB_PARENT
+traffic policy TEST_POLICY
+ classifier TEST_POLICY behavior TEST_POLICY
 quit
-interface GigabitEthernet0/0/1.3001
- description LAB#INTE#0001
- dot1q termination vid 3001
- ip binding vpn-instance LAB-INTERNET
- ip address 10.255.0.1 255.255.255.252
+interface GigabitEthernet0/0/0.10
+ description TEST-0000000001
+ dot1q termination vid 10
+ ip binding vpn-instance TEST-INTERNET
+ ip address 192.168.10.1 255.255.255.252
  arp broadcast enable
- traffic-policy LAB_100MB_PARENT inbound
- traffic-policy LAB_100MB_PARENT outbound
+ traffic-policy TEST_POLICY inbound
+ traffic-policy TEST_POLICY outbound
  undo shutdown
 quit
-ip route-static vpn-instance LAB-INTERNET 203.0.113.0 255.255.255.248 10.255.0.2
+ip route-static vpn-instance TEST-INTERNET 10.50.1.8 255.255.255.248 192.168.10.2

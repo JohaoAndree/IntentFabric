@@ -8,6 +8,23 @@ class IntentFabricError(Exception):
     """Agrupa los errores explicitos del framework."""
 
 
+class InvalidInterfaceNameError(IntentFabricError):
+    """Indica un prefijo, indice o sufijo de interfaz invalido."""
+
+
+class TopologyValidationError(IntentFabricError):
+    """Indica un catalogo topologico mal formado o inconsistente."""
+
+
+class TopologyPathResolutionError(IntentFabricError):
+    """Expone el motivo y nodo de una ruta topologica no resoluble."""
+
+    def __init__(self, message: str, *, code: str, node_id: str | None = None) -> None:
+        self.code = code
+        self.node_id = node_id
+        super().__init__(message)
+
+
 class IntentParseError(IntentFabricError):
     """Indica una intención inválida mediante un mensaje con la ruta del campo."""
 

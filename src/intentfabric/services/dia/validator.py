@@ -21,7 +21,7 @@ def validate_dia_intent_semantics(intent: DiaIntent) -> tuple[ValidationIssue, .
                 code="RESERVED_CISCO_VLAN",
                 message="vlan_id: elija una VLAN de servicio distinta de 1 y 1002..1005 para Cisco.",
                 stage=ValidationStage.STATIC_OFFLINE,
-                field_path="vlan_id", node_id=str(hop.management_ip),
+                field_path="vlan_id", node_id=hop.node_id,
             ))
         if hop.management_ip in intent.wan_network or (
             hop.management_ip in intent.lan_network
@@ -30,7 +30,7 @@ def validate_dia_intent_semantics(intent: DiaIntent) -> tuple[ValidationIssue, .
                 code="MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK",
                 message="management_ip: utilice una direccion fuera de las redes WAN y LAN del servicio.",
                 stage=ValidationStage.STATIC_OFFLINE,
-                field_path=f"hops[{index}].management_ip", node_id=str(hop.management_ip),
+                field_path=f"hops[{index}].management_ip", node_id=hop.node_id,
             ))
 
     if intent.bandwidth_mbps > 1000:

@@ -5,13 +5,15 @@ from dataclasses import FrozenInstanceError, dataclass, replace
 from ipaddress import IPv4Address, IPv4Network
 from itertools import permutations
 import json
+from pathlib import Path
 from typing import Any, ClassVar
 
 import pytest
 
 from intentfabric.application import NoOpPreFlightChecker, PreFlightCheckerPort, PreValidationService
 from intentfabric.application.plugin_catalog import PluginCatalog, SemanticValidator
-from intentfabric.bootstrap import build_plugin_catalog
+from intentfabric.bootstrap import build_plugin_catalog, load_default_topology
+from intentfabric.adapters.intent_file_loader import load_intent_mapping
 from intentfabric.domain import (
     IntentFabricError, PreValidationFailedError, ValidationIssue,
     ValidationReport, ValidationSeverity, ValidationStage,
@@ -23,6 +25,7 @@ from intentfabric.domain.errors import (
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 from intentfabric.domain.vendor_definition import VendorDefinition
+from intentfabric.domain.topology import TopologyCatalog, TopologyLink
 from intentfabric.services.dia import validate_dia_intent_semantics
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 
@@ -42,10 +45,15 @@ def _dia_intent() -> DiaIntent:
         wan_network=IPv4Network("198.51.100.0/30"),
         lan_network=IPv4Network("203.0.113.0/29"), bandwidth_mbps=50,
         qos_policy_name="LAB_50MB_PARENT",
-        access=AccessHop("huawei", IPv4Address("192.0.2.11"), "port", "uplink"),
-        transits=(TransitHop("cisco", IPv4Address("192.0.2.12"), "down", "up"),),
-        provider_edge=ProviderEdgeHop("huawei", IPv4Address("192.0.2.21"), "parent"),
+        access=AccessHop("LAB-ACCESS", "huawei", IPv4Address("192.0.2.11"), "GigabitEthernet0/0/1", "GigabitEthernet0/0/24"),
+        transits=(TransitHop("LAB-TRANSIT", "cisco", IPv4Address("192.0.2.12"), "GigabitEthernet1/0/23", "GigabitEthernet1/0/24"),),
+        provider_edge=ProviderEdgeHop("LAB-PE", "huawei", IPv4Address("192.0.2.21"), "GigabitEthernet0/0/1"),
     )
+
+
+def _lab_intent() -> DiaIntent:
+    path = Path(__file__).resolve().parents[2] / "examples/intents/dia_valid.json"
+    return build_plugin_catalog().parse_intent(load_intent_mapping(path))
 
 
 def _supported_catalog(
@@ -88,7 +96,6 @@ class _IdentifiedIntent(DiaIntent):
 
 @dataclass(frozen=True)
 class _IdentifiedAccess(AccessHop):
-    node_id: str | None = None
     hostname: str | None = None
 
 
@@ -233,8 +240,8 @@ def test_dia_reports_each_cisco_hop_using_a_reserved_vlan(vlan_id: int) -> None:
     intent = replace(intent, vlan_id=vlan_id, access=replace(intent.access, vendor="cisco"))
     issues = validate_dia_intent_semantics(intent)
     assert [(issue.code, issue.field_path, issue.node_id) for issue in issues] == [
-        ("RESERVED_CISCO_VLAN", "vlan_id", "192.0.2.11"),
-        ("RESERVED_CISCO_VLAN", "vlan_id", "192.0.2.12"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", intent.access.node_id),
+        ("RESERVED_CISCO_VLAN", "vlan_id", intent.transits[0].node_id),
     ]
 
 
@@ -262,7 +269,7 @@ def test_dia_reports_management_overlap_in_wan_and_lan(address: str) -> None:
     assert len(issues) == 1
     assert issues[0].code == "MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK"
     assert issues[0].field_path == "hops[2].management_ip"
-    assert issues[0].node_id == address
+    assert issues[0].node_id == intent.provider_edge.node_id
 
 
 @pytest.mark.parametrize("bandwidth_mbps, expected_count", [(1000, 0), (1001, 1)])
@@ -365,16 +372,16 @@ def test_report_identity_uses_service_id_or_description(service_id: str | None) 
 
 @pytest.mark.parametrize("node_id, hostname, expected", [
     ("LAB-NODE", "LAB-HOST", "LAB-NODE"),
-    (None, "LAB-HOST", "LAB-HOST"),
-    ("", "", "192.0.2.11"),
+    ("LAB-NODE-2", "LAB-HOST", "LAB-NODE-2"),
+    ("LAB-NODE-3", "", "LAB-NODE-3"),
 ])
 def test_catalog_issues_resolve_the_official_node_identity(
     node_id: str | None, hostname: str | None, expected: str,
 ) -> None:
-    """Identifica el salto por node_id, hostname o management_ip en ese orden."""
+    """Identifica el salto por node_id aunque el hostname o la gestion difieran."""
     intent = _dia_intent()
     access = _IdentifiedAccess(
-        **(vars(intent.access) | {"vendor": "unknown"}), node_id=node_id, hostname=hostname,
+        **(vars(intent.access) | {"vendor": "unknown", "node_id": node_id}), hostname=hostname,
     )
     report = PreValidationService(_supported_catalog()).validate(replace(intent, access=access))
     assert [(issue.code, issue.node_id) for issue in report.issues] == [
@@ -389,7 +396,7 @@ def test_static_validation_accumulates_defects_and_short_circuits() -> None:
         intent, vlan_id=1, bandwidth_mbps=1001,
         transits=(
             replace(intent.transits[0], management_ip=intent.access.management_ip),
-            replace(intent.transits[0], vendor="unknown", management_ip=intent.provider_edge.management_ip),
+            replace(intent.transits[0], node_id="LAB-TRANSIT-2", vendor="unknown", management_ip=intent.provider_edge.management_ip),
         ),
     )
     missing_key = TemplateKey("DIA", Operation.TEARDOWN, NodeRole.TRANSIT)
@@ -403,8 +410,8 @@ def test_static_validation_accumulates_defects_and_short_circuits() -> None:
     ]
     duplicates = [issue for issue in report.issues if issue.code == "DUPLICATE_MANAGEMENT_IP"]
     assert [(issue.field_path, issue.node_id) for issue in duplicates] == [
-        ("hops[1].management_ip", "192.0.2.11"),
-        ("hops[3].management_ip", "192.0.2.21"),
+        ("hops[3].management_ip", "LAB-PE"),
+        ("hops[1].management_ip", "LAB-TRANSIT"),
     ]
     assert not report.is_valid
     assert not report.preflight_executed
@@ -436,11 +443,11 @@ def test_programmatic_role_disorder_blocks_preflight(position: str) -> None:
     """Rechaza tipos de salto ajenos al rol de su posicion en la ruta."""
     intent = _dia_intent()
     if position == "access":
-        intent = replace(intent, access=ProviderEdgeHop("huawei", intent.access.management_ip, "port"))
+        intent = replace(intent, access=ProviderEdgeHop("LAB-ACCESS", "huawei", intent.access.management_ip, "GigabitEthernet0/0/1"))
     elif position == "transits":
-        intent = replace(intent, transits=(AccessHop("cisco", intent.transits[0].management_ip, "p", "u"),))
+        intent = replace(intent, transits=(AccessHop("LAB-TRANSIT", "cisco", intent.transits[0].management_ip, "GigabitEthernet0/0/1", "GigabitEthernet0/0/24"),))
     else:
-        intent = replace(intent, provider_edge=TransitHop("huawei", intent.provider_edge.management_ip, "d", "u"))
+        intent = replace(intent, provider_edge=TransitHop("LAB-PE", "huawei", intent.provider_edge.management_ip, "GigabitEthernet1/0/23", "GigabitEthernet0/0/24"))
     checker = _PreFlightChecker()
     report = PreValidationService(_supported_catalog(), checker).validate(intent)
     assert [issue.code for issue in report.issues] == ["INVALID_PATH_ROLE_ORDER"]
@@ -454,7 +461,7 @@ def test_valid_path_supports_zero_or_more_transit_hops(transit_count: int) -> No
     """Admite acceso y PE unidos mediante cero o mas transitos ordenados."""
     intent = _dia_intent()
     intent = replace(intent, transits=tuple(
-        TransitHop("cisco", IPv4Address(f"192.0.2.{30 + index}"), "down", "up")
+        TransitHop(f"LAB-TRANSIT-{index}", "cisco", IPv4Address(f"192.0.2.{30 + index}"), "GigabitEthernet1/0/23", "GigabitEthernet1/0/24")
         for index in range(transit_count)
     ))
     checker = _PreFlightChecker()
@@ -592,7 +599,7 @@ def test_static_validation_reports_the_full_criterion_two_combination() -> None:
         intent, vlan_id=1, bandwidth_mbps=1001,
         transits=(
             replace(intent.transits[0], management_ip=intent.access.management_ip),
-            replace(intent.transits[0], vendor="unknown", management_ip=IPv4Address("198.51.100.1")),
+            replace(intent.transits[0], node_id="LAB-TRANSIT-2", vendor="unknown", management_ip=IPv4Address("198.51.100.1")),
         ),
     )
     missing_key = TemplateKey("DIA", Operation.TEARDOWN, NodeRole.TRANSIT)
@@ -607,3 +614,201 @@ def test_static_validation_reports_the_full_criterion_two_combination() -> None:
     assert not report.is_valid
     assert not report.preflight_executed
     assert checker.call_count == 0
+
+
+@pytest.mark.parametrize(("kind", "expected_code", "field", "node_id"), (
+    ("missing_node", "TOPOLOGY_NODE_NOT_FOUND", "hops[0].node_id", "absent"),
+    ("vendor", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S3-9306-TEST"),
+    ("role", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S1-9306-TEST"),
+    ("address", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S3-9306-TEST"),
+    ("client_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[0].customer_port", "S3-9306-TEST"),
+    ("uplink_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[0].uplink_interface", "S3-9306-TEST"),
+    ("ingress_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[1].downstream_interface", "S1-9306-TEST"),
+    ("egress_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[1].upstream_interface", "S1-9306-TEST"),
+    ("pe_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[2].parent_interface", "PE2-TEST"),
+    ("skipped_transit", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S3-9306-TEST"),
+    ("wrong_uplink", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S3-9306-TEST"),
+    ("swapped_transit", "TOPOLOGY_LINK_NOT_FOUND", "hops[1]", "S1-9306-TEST"),
+    ("wrong_pe", "TOPOLOGY_LINK_NOT_FOUND", "hops[1]", "S1-9306-TEST"),
+    ("disconnected", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S3-9306-TEST"),
+))
+def test_inventory_defects_block_preflight_with_exact_location(
+    kind: str, expected_code: str, field: str, node_id: str,
+) -> None:
+    """Rechaza nodos, atributos, puertos y enlaces discordantes antes de Pre-Flight."""
+    intent = _lab_intent()
+    topology = load_default_topology()
+    if kind == "missing_node":
+        intent = replace(intent, access=replace(intent.access, node_id="absent"))
+    elif kind == "vendor":
+        intent = replace(intent, access=replace(intent.access, vendor="huawei"))
+    elif kind == "role":
+        intent = replace(intent, access=replace(intent.access, node_id="S1-9306-TEST"), transits=())
+    elif kind == "address":
+        intent = replace(intent, access=replace(intent.access, management_ip=IPv4Address("192.0.2.99")))
+    elif kind in ("client_port", "uplink_port"):
+        attribute = "customer_port" if kind == "client_port" else "uplink_interface"
+        intent = replace(intent, access=replace(intent.access, **{attribute: "Gi1/0/99"}))
+    elif kind in ("ingress_port", "egress_port"):
+        attribute = "downstream_interface" if kind == "ingress_port" else "upstream_interface"
+        intent = replace(intent, transits=(replace(intent.transits[0], **{attribute: "GE1/0/99"}),))
+    elif kind == "pe_port":
+        intent = replace(intent, provider_edge=replace(intent.provider_edge, parent_interface="GE0/0/99"))
+    elif kind == "skipped_transit":
+        intent = replace(intent, transits=())
+    elif kind == "wrong_uplink":
+        intent = replace(intent, access=replace(intent.access, uplink_interface="Gi1/0/2"))
+    elif kind == "swapped_transit":
+        transit = intent.transits[0]
+        intent = replace(intent, transits=(replace(transit, downstream_interface=transit.upstream_interface, upstream_interface=transit.downstream_interface),))
+    elif kind == "wrong_pe":
+        intent = replace(intent, provider_edge=replace(intent.provider_edge, parent_interface="GE0/0/1"))
+    else:
+        topology = replace(topology, links=topology.links[1:])
+    checker = _PreFlightChecker()
+    service = PreValidationService(build_plugin_catalog(topology), checker, topology=topology)
+    report = service.validate(intent)
+    assert not report.is_valid
+    assert not report.preflight_executed
+    assert checker.call_count == 0
+    assert (expected_code, field, node_id) in {
+        (issue.code, issue.field_path, issue.node_id) for issue in report.errors
+    }
+    assert all(issue.stage == ValidationStage.STATIC_OFFLINE for issue in report.errors)
+    with pytest.raises(PreValidationFailedError) as error:
+        service.validate_and_require(intent)
+    assert error.value.report == report
+    assert checker.call_count == 0
+
+
+def test_valid_inventory_route_allows_preflight() -> None:
+    """Permite Pre-Flight cuando identidad, atributos, puertos y continuidad coinciden."""
+    topology = load_default_topology()
+    checker = _PreFlightChecker()
+    report = PreValidationService(build_plugin_catalog(topology), checker, topology=topology).validate(_lab_intent())
+    assert report.is_valid
+    assert report.issues == ()
+    assert report.preflight_executed
+    assert checker.call_count == 1
+
+
+def test_duplicate_node_identity_is_rejected_without_inventory() -> None:
+    """Impide repetir node_id incluso sin inventario y con direcciones de gestion distintas."""
+    intent = _dia_intent()
+    intent = replace(intent, transits=(replace(intent.transits[0], node_id=intent.access.node_id),))
+    checker = _PreFlightChecker()
+    report = PreValidationService(_supported_catalog(), checker).validate(intent)
+    assert [(issue.code, issue.field_path, issue.node_id) for issue in report.errors] == [
+        ("DUPLICATE_NODE_HOP", "hops[1].node_id", intent.access.node_id),
+    ]
+    assert checker.call_count == 0
+
+
+def test_inventory_diagnostics_do_not_depend_on_catalog_input_order() -> None:
+    """Serializa los mismos hallazgos aunque se inviertan nodos y enlaces del inventario."""
+    topology = load_default_topology()
+    intent = _lab_intent()
+    intent = replace(intent, access=replace(intent.access, uplink_interface="Gi1/0/2"))
+    reports = [PreValidationService(build_plugin_catalog(candidate), topology=candidate).validate(intent).to_dict()
+               for candidate in (topology, TopologyCatalog(tuple(reversed(topology.nodes)), tuple(reversed(topology.links))))]
+    assert reports[0] == reports[1]
+
+
+@pytest.mark.parametrize("reverse_links", (False, True))
+@pytest.mark.parametrize(("customer_port", "is_trunk"), (
+    ("Gi1/0/10", True), ("Gi1/0/2", True), ("Gi1/0/1", False),
+))
+def test_programmatic_client_port_checks_every_incident_link(
+    reverse_links: bool, customer_port: str, is_trunk: bool,
+) -> None:
+    """Bloquea cualquier troncal del acceso en ambos sentidos y permite un puerto libre."""
+    topology = load_default_topology()
+    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE0/0/2"))
+    if reverse_links:
+        links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
+                      for link in reversed(links))
+    topology = replace(topology, links=links)
+    intent = _lab_intent()
+    intent = replace(intent, access=replace(intent.access, customer_port=customer_port))
+    assert intent.access.customer_port.startswith("GigabitEthernet")
+    checker = _PreFlightChecker()
+    service = PreValidationService(build_plugin_catalog(topology), checker, topology=topology)
+    report = service.validate(intent)
+    assert report.is_valid == (not is_trunk)
+    assert report.preflight_executed == (not is_trunk)
+    assert checker.call_count == (0 if is_trunk else 1)
+    if is_trunk:
+        assert [(issue.code, issue.stage, issue.field_path, issue.node_id) for issue in report.errors] == [
+            ("TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", ValidationStage.STATIC_OFFLINE,
+             "hops[0].customer_port", intent.access.node_id),
+        ]
+        assert report.errors[0].severity == ValidationSeverity.ERROR
+        with pytest.raises(PreValidationFailedError) as error:
+            service.validate_and_require(intent)
+        assert error.value.report == report
+        assert checker.call_count == 0
+    else:
+        assert report.issues == ()
+
+
+@pytest.mark.parametrize("customer_port", ("Gi1/0/10", "Gi1/0/2"))
+def test_client_trunk_check_requires_injected_inventory(customer_port: str) -> None:
+    """Conserva la validacion sin inventario aunque el puerto sea troncal en otro catalogo."""
+    intent = _lab_intent()
+    intent = replace(intent, access=replace(intent.access, customer_port=customer_port))
+    checker = _PreFlightChecker()
+    report = PreValidationService(build_plugin_catalog(), checker).validate(intent)
+    assert report.is_valid
+    assert report.issues == ()
+    assert report.preflight_executed
+    assert checker.call_count == 1
+
+
+def test_client_trunk_error_preserves_other_static_diagnostics() -> None:
+    """Acumula el troncal de cliente junto a VLAN, interfaz y enlace invalidos."""
+    topology = load_default_topology()
+    intent = _lab_intent()
+    intent = replace(intent, vlan_id=0, access=replace(
+        intent.access, customer_port="Gi1/0/10", uplink_interface="Gi1/0/99",
+    ))
+    checker = _PreFlightChecker()
+    report = PreValidationService(build_plugin_catalog(), checker, topology=topology).validate(intent)
+    assert [issue.code for issue in report.errors] == [
+        "INVALID_VLAN_RANGE", "TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK",
+        "TOPOLOGY_INTERFACE_NOT_FOUND", "TOPOLOGY_LINK_NOT_FOUND",
+    ]
+    assert not report.is_valid
+    assert not report.preflight_executed
+    assert checker.call_count == 0
+
+
+def test_dia_semantic_report_serializes_logical_node_identity_in_stable_order() -> None:
+    """Conserva identidad logica, taxonomia y orden canonico de ambos errores semanticos en JSON."""
+    intent = _dia_intent()
+    intent = replace(
+        intent, vlan_id=1002,
+        access=replace(intent.access, node_id="Z-ACCESS", vendor="cisco", management_ip=IPv4Address("198.51.100.1")),
+        transits=(replace(intent.transits[0], node_id="A-TRANSIT", management_ip=IPv4Address("203.0.113.1")),),
+        provider_edge=replace(intent.provider_edge, node_id="M-PE", vendor="cisco", management_ip=IPv4Address("198.51.100.2")),
+    )
+    assert all(hop.node_id != str(hop.management_ip) for hop in intent.hops)
+    report = PreValidationService(build_plugin_catalog()).validate(intent)
+    expected = [
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[1].management_ip", "A-TRANSIT"),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[2].management_ip", "M-PE"),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[0].management_ip", "Z-ACCESS"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "A-TRANSIT"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "M-PE"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "Z-ACCESS"),
+    ]
+    assert [(issue.code, issue.field_path, issue.node_id) for issue in report.errors] == expected
+    assert all(issue.stage == ValidationStage.STATIC_OFFLINE for issue in report.issues)
+    assert all(issue.severity == ValidationSeverity.ERROR for issue in report.issues)
+    serialized = json.dumps(report.to_dict(), ensure_ascii=False)
+    decoded = json.loads(serialized)
+    assert [(issue["code"], issue["field_path"], issue["node_id"]) for issue in decoded["issues"]] == expected
+    assert all(issue["stage"] == "static_offline" and issue["severity"] == "error" for issue in decoded["issues"])
+    for issue_order in (tuple(reversed(report.issues)), (*report.issues[::2], *report.issues[1::2])):
+        reordered = ValidationReport(report.service_id, report.service_type, issue_order)
+        assert reordered == report
+        assert json.dumps(reordered.to_dict(), ensure_ascii=False) == serialized

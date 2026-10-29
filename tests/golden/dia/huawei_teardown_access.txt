@@ -4,7 +4,7 @@ interface GigabitEthernet0/0/1
  undo port link-type
  shutdown
 quit
-interface GigabitEthernet0/0/24
- undo port trunk allow-pass vlan 3001
+interface GigabitEthernet0/0/8
+ undo port trunk allow-pass vlan 10
 quit
-undo vlan 3001
+undo vlan 10
