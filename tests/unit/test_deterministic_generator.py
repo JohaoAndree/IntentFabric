@@ -4,16 +4,19 @@ from collections.abc import Mapping, Sequence
 from dataclasses import FrozenInstanceError, dataclass, fields, replace
 from ipaddress import IPv4Address, IPv4Network
 import json
+from pathlib import Path
 
 import jinja2
 import pytest
 
 from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
+from intentfabric.adapters.intent_file_loader import load_intent_mapping
 from intentfabric.application.plugin_catalog import PluginCatalog
 from intentfabric.application.generation import DeterministicGeneratorService
 from intentfabric.application.pre_validation import PreValidationService
 from intentfabric.bootstrap import (
     build_generator, build_plugin_catalog, create_default_catalog, create_default_generator,
+    load_default_topology,
 )
 from intentfabric.domain.errors import (
     PluginRegistrationError, PreValidationFailedError, TemplateNotFoundError, TemplateRenderError,
@@ -25,7 +28,8 @@ from intentfabric.domain.generation import (
 )
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
-from intentfabric.domain.validation import ValidationReport
+from intentfabric.domain.topology import TopologyLink
+from intentfabric.domain.validation import ValidationIssue, ValidationReport
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.services.dia.context_builder import build_dia_hop_context
 from intentfabric.services.dia.intent_parser import DiaIntentParser
@@ -472,3 +476,45 @@ def test_factory_honors_injected_catalog_source_and_prevalidator(monkeypatch: py
     assert all(artifact.rendered_text == "teardown LAB#INTE#0001\n" for artifact in plan.artifacts)
     assert create_default_catalog is build_plugin_catalog
     assert create_default_generator is build_generator
+
+
+@pytest.mark.parametrize("operation", tuple(Operation))
+@pytest.mark.parametrize("reverse_links", (False, True))
+@pytest.mark.parametrize("customer_port", ("Gi1/0/10", "Gi1/0/2"))
+def test_programmatic_client_trunks_block_preflight_and_generation(
+    operation: Operation, reverse_links: bool, customer_port: str,
+) -> None:
+    """Rechaza generar sobre cualquier troncal de cliente antes de Pre-Flight y renderizado."""
+    topology = load_default_topology()
+    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE0/0/2"))
+    if reverse_links:
+        links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
+                      for link in reversed(links))
+    topology = replace(topology, links=links)
+    catalog = build_plugin_catalog(topology)
+    path = Path(__file__).resolve().parents[2] / "examples/intents/dia_valid.json"
+    intent = catalog.parse_intent(load_intent_mapping(path))
+    intent = replace(intent, access=replace(intent.access, customer_port=customer_port))
+    preflight_calls: list[DiaIntent] = []
+
+    class PreFlightRecorder:
+        """Registra cualquier invocacion indebida a Pre-Flight."""
+
+        def check_preflight(self, candidate: DiaIntent) -> tuple[ValidationIssue, ...]:
+            """Conserva la intencion recibida sin emitir hallazgos adicionales."""
+            preflight_calls.append(candidate)
+            return ()
+
+    source = _TemplateSource("{{ node_id }}\n")
+    validator = PreValidationService(catalog, PreFlightRecorder(), topology=topology)
+    generator = build_generator(catalog, source, validator, topology=topology)
+    with pytest.raises(PreValidationFailedError) as error:
+        generator.generate(intent, operation=operation)
+    report = error.value.report
+    assert not report.is_valid
+    assert not report.preflight_executed
+    assert [(issue.code, issue.stage.value, issue.field_path, issue.node_id) for issue in report.errors] == [
+        ("TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", "static_offline", "hops[0].customer_port", intent.access.node_id),
+    ]
+    assert preflight_calls == []
+    assert source.calls == []

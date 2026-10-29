@@ -211,6 +211,16 @@ def _validate_topology(intent: Any, topology: TopologyCatalog) -> tuple[Validati
                 message="hops: vendor, rol y management_ip deben coincidir con el inventario.",
                 stage=ValidationStage.STATIC_OFFLINE, field_path=f"hops[{index}]", node_id=hop.node_id,
             ))
+        if isinstance(hop, AccessHop) and any(
+            hop.customer_port == local_interface
+            for _, local_interface, _ in topology.neighbors_of(hop.node_id)
+        ):
+            issues.append(ValidationIssue(
+                code="TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK",
+                message="customer_port: utilice un puerto libre de enlaces troncales en el inventario.",
+                stage=ValidationStage.STATIC_OFFLINE,
+                field_path=f"hops[{index}].customer_port", node_id=hop.node_id,
+            ))
         for attribute, interface in _hop_interfaces(hop):
             if interface not in node.interfaces:
                 issues.append(ValidationIssue(

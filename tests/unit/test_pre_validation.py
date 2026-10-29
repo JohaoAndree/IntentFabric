@@ -25,7 +25,7 @@ from intentfabric.domain.errors import (
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 from intentfabric.domain.vendor_definition import VendorDefinition
-from intentfabric.domain.topology import TopologyCatalog
+from intentfabric.domain.topology import TopologyCatalog, TopologyLink
 from intentfabric.services.dia import validate_dia_intent_semantics
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 
@@ -712,3 +712,71 @@ def test_inventory_diagnostics_do_not_depend_on_catalog_input_order() -> None:
     reports = [PreValidationService(build_plugin_catalog(candidate), topology=candidate).validate(intent).to_dict()
                for candidate in (topology, TopologyCatalog(tuple(reversed(topology.nodes)), tuple(reversed(topology.links))))]
     assert reports[0] == reports[1]
+
+
+@pytest.mark.parametrize("reverse_links", (False, True))
+@pytest.mark.parametrize(("customer_port", "is_trunk"), (
+    ("Gi1/0/10", True), ("Gi1/0/2", True), ("Gi1/0/1", False),
+))
+def test_programmatic_client_port_checks_every_incident_link(
+    reverse_links: bool, customer_port: str, is_trunk: bool,
+) -> None:
+    """Bloquea cualquier troncal del acceso en ambos sentidos y permite un puerto libre."""
+    topology = load_default_topology()
+    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE0/0/2"))
+    if reverse_links:
+        links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
+                      for link in reversed(links))
+    topology = replace(topology, links=links)
+    intent = _lab_intent()
+    intent = replace(intent, access=replace(intent.access, customer_port=customer_port))
+    assert intent.access.customer_port.startswith("GigabitEthernet")
+    checker = _PreFlightChecker()
+    service = PreValidationService(build_plugin_catalog(topology), checker, topology=topology)
+    report = service.validate(intent)
+    assert report.is_valid == (not is_trunk)
+    assert report.preflight_executed == (not is_trunk)
+    assert checker.call_count == (0 if is_trunk else 1)
+    if is_trunk:
+        assert [(issue.code, issue.stage, issue.field_path, issue.node_id) for issue in report.errors] == [
+            ("TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", ValidationStage.STATIC_OFFLINE,
+             "hops[0].customer_port", intent.access.node_id),
+        ]
+        assert report.errors[0].severity == ValidationSeverity.ERROR
+        with pytest.raises(PreValidationFailedError) as error:
+            service.validate_and_require(intent)
+        assert error.value.report == report
+        assert checker.call_count == 0
+    else:
+        assert report.issues == ()
+
+
+@pytest.mark.parametrize("customer_port", ("Gi1/0/10", "Gi1/0/2"))
+def test_client_trunk_check_requires_injected_inventory(customer_port: str) -> None:
+    """Conserva la validacion sin inventario aunque el puerto sea troncal en otro catalogo."""
+    intent = _lab_intent()
+    intent = replace(intent, access=replace(intent.access, customer_port=customer_port))
+    checker = _PreFlightChecker()
+    report = PreValidationService(build_plugin_catalog(), checker).validate(intent)
+    assert report.is_valid
+    assert report.issues == ()
+    assert report.preflight_executed
+    assert checker.call_count == 1
+
+
+def test_client_trunk_error_preserves_other_static_diagnostics() -> None:
+    """Acumula el troncal de cliente junto a VLAN, interfaz y enlace invalidos."""
+    topology = load_default_topology()
+    intent = _lab_intent()
+    intent = replace(intent, vlan_id=0, access=replace(
+        intent.access, customer_port="Gi1/0/10", uplink_interface="Gi1/0/99",
+    ))
+    checker = _PreFlightChecker()
+    report = PreValidationService(build_plugin_catalog(), checker, topology=topology).validate(intent)
+    assert [issue.code for issue in report.errors] == [
+        "INVALID_VLAN_RANGE", "TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK",
+        "TOPOLOGY_INTERFACE_NOT_FOUND", "TOPOLOGY_LINK_NOT_FOUND",
+    ]
+    assert not report.is_valid
+    assert not report.preflight_executed
+    assert checker.call_count == 0
