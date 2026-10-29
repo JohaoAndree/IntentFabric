@@ -8,6 +8,5 @@ interface GigabitEthernet0/0/1
  undo shutdown
 quit
 interface GigabitEthernet0/0/24
- port link-type trunk
  port trunk allow-pass vlan 3001
 quit

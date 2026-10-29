@@ -2,10 +2,8 @@ vlan 3001
  description LAB#INTE#0001
 quit
 interface GigabitEthernet1/0/23
- port link-type trunk
  port trunk allow-pass vlan 3001
 quit
 interface GigabitEthernet1/0/24
- port link-type trunk
  port trunk allow-pass vlan 3001
 quit

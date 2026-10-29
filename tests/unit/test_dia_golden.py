@@ -78,10 +78,10 @@ def test_packaged_source_loads_every_declared_dia_template(
 
 
 @pytest.mark.parametrize("vendor_id", ("cisco", "huawei"))
-def test_access_and_transit_modes_and_native_pe_qos(
+def test_access_mode_existing_trunk_vlan_propagation_and_native_pe_qos(
     reference_intent: DiaIntent, vendor_id: str,
 ) -> None:
-    """Garantiza description unica, modos de puerto y escalado QoS del fabricante."""
+    """Garantiza acceso, propagacion VLAN sobre troncales existentes y QoS nativo."""
     intent = replace(
         reference_intent,
         access=replace(reference_intent.access, vendor=vendor_id),
@@ -99,18 +99,33 @@ def test_access_and_transit_modes_and_native_pe_qos(
         assert f" name {intent.description}\n" in access.rendered_text
         assert f" name {intent.description}\n" in transit.rendered_text
         assert " switchport mode access\n" in access.rendered_text
-        assert " switchport mode trunk\n" in access.rendered_text
-        assert transit.rendered_text.count(" switchport mode trunk\n") == 2
+        assert (
+            f"interface {intent.access.uplink_interface}\n"
+            f" switchport trunk allowed vlan add {intent.vlan_id}\nexit\n"
+        ) in access.rendered_text
+        assert transit.rendered_text.count(f" switchport trunk allowed vlan add {intent.vlan_id}\n") == 2
         assert "police rate 100000000 bps\n" in pe.rendered_text
     else:
         assert " port link-type access\n" in access.rendered_text
-        assert " port link-type trunk\n" in access.rendered_text
-        assert transit.rendered_text.count(" port link-type trunk\n") == 2
+        assert (
+            f"interface {intent.access.uplink_interface}\n"
+            f" port trunk allow-pass vlan {intent.vlan_id}\nquit\n"
+        ) in access.rendered_text
+        assert transit.rendered_text.count(f" port trunk allow-pass vlan {intent.vlan_id}\n") == 2
         assert f" description {intent.description}\n" in transit.rendered_text
         assert " car cir 100000 pir 100000\n" in pe.rendered_text
         assert f"traffic policy {intent.qos_policy_name}\n" in pe.rendered_text
     assert access.rendered_text.count(intent.description) == 2
     assert f" description {intent.description}\n" in pe.rendered_text
     teardown = generator.generate(intent, operation=Operation.TEARDOWN)
+    for artifact in (access, transit, *teardown.artifacts[:2]):
+        assert "switchport mode trunk" not in artifact.rendered_text
+        assert "port link-type trunk" not in artifact.rendered_text
+    removal_command = (
+        f" switchport trunk allowed vlan remove {intent.vlan_id}\n"
+        if vendor_id == "cisco" else f" undo port trunk allow-pass vlan {intent.vlan_id}\n"
+    )
+    assert teardown.artifacts[0].rendered_text.count(removal_command) == 1
+    assert teardown.artifacts[1].rendered_text.count(removal_command) == 2
     assert " shutdown\n" in teardown.artifacts[0].rendered_text
     assert "shutdown" not in teardown.artifacts[1].rendered_text

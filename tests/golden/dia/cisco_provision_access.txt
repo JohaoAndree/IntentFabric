@@ -8,6 +8,5 @@ interface GigabitEthernet0/0/1
  no shutdown
 exit
 interface GigabitEthernet0/0/24
- switchport mode trunk
  switchport trunk allowed vlan add 3001
 exit

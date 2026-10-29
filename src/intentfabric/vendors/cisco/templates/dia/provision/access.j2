@@ -8,6 +8,5 @@ interface {{ client_interface }}
  no shutdown
 exit
 interface {{ uplink_interface }}
- switchport mode trunk
  switchport trunk allowed vlan add {{ vlan_id }}
 exit
