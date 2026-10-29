@@ -1,5 +1,6 @@
 """Artefactos inmutables y huellas deterministas de configuracion generada."""
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from hashlib import sha256
 from ipaddress import IPv4Address
@@ -20,6 +21,14 @@ def normalize_rendered_config(raw_text: str) -> str:
     while lines and not lines[-1]:
         lines.pop()
     return "\n".join(lines) + "\n" if lines else ""
+
+
+def extract_commands(rendered_text: str) -> tuple[str, ...]:
+    """Extrae lineas CLI no vacias ni comentarios conservando su indentacion."""
+    return tuple(
+        line for line in rendered_text.splitlines()
+        if line.strip() and not line.lstrip().startswith(("!", "#"))
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -44,14 +53,19 @@ class NodeConfigurationArtifact:
             raise ValueError("node_id: se requiere texto no vacio")
         if not self.rendered_text or normalize_rendered_config(self.rendered_text) != self.rendered_text:
             raise ValueError("rendered_text: se requiere configuracion no vacia y normalizada")
-        expected_commands = tuple(
-            line for line in self.rendered_text.splitlines()
-            if line.strip() and not line.lstrip().startswith(("!", "#"))
-        )
+        expected_commands = extract_commands(self.rendered_text)
         if self.commands != expected_commands:
             raise ValueError("commands: deben coincidir con las lineas CLI sin comentarios")
         if self.sha256 != compute_sha256(self.rendered_text):
             raise ValueError("sha256: debe corresponder al texto renderizado en UTF-8")
+
+
+def compute_plan_sha256(artifacts: Sequence[NodeConfigurationArtifact]) -> str:
+    """Calcula la huella del plan conservando el orden recibido de los artefactos."""
+    return compute_sha256("|".join(
+        f"{artifact.hop_index}:{artifact.node_id}:{artifact.sha256}"
+        for artifact in artifacts
+    ))
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,10 +82,7 @@ class ServiceGenerationPlan:
     def __post_init__(self) -> None:
         if not isinstance(self.artifacts, tuple) or not self.artifacts:
             raise ValueError("artifacts: se requiere una tupla no vacia")
-        expected_hash = compute_sha256("|".join(
-            f"{artifact.hop_index}:{artifact.node_id}:{artifact.sha256}"
-            for artifact in self.artifacts
-        ))
+        expected_hash = compute_plan_sha256(self.artifacts)
         if self.plan_sha256 != expected_hash:
             raise ValueError("plan_sha256: debe corresponder a los artefactos en orden de ruta")
 

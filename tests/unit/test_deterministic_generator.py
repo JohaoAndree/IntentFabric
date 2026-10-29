@@ -20,7 +20,8 @@ from intentfabric.domain.errors import (
     UnsupportedCombinationError,
 )
 from intentfabric.domain.generation import (
-    NodeConfigurationArtifact, ServiceGenerationPlan, compute_sha256, normalize_rendered_config,
+    NodeConfigurationArtifact, ServiceGenerationPlan, compute_plan_sha256, compute_sha256,
+    extract_commands, normalize_rendered_config,
 )
 from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
@@ -104,6 +105,42 @@ def test_sha256_matches_known_utf8_vector() -> None:
     """Produce el vector SHA-256 conocido sin agregar terminadores ni metadatos."""
     assert compute_sha256("abc") == "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     assert compute_sha256("abc\n") != compute_sha256("abc")
+
+
+@pytest.mark.parametrize(
+    ("rendered_text", "expected"),
+    [("", ()), ("\n \t\n", ()),
+     ("! comentario\n# comentario\n \t! indentado\n\t# indentado\n", ()),
+     ("interface client\n shutdown\n\tdescription LAB#DIA!\n",
+      ("interface client", " shutdown", "\tdescription LAB#DIA!")),
+     ("\n! inicio\ninterface client\n \n  # comentario\n shutdown\n\n",
+      ("interface client", " shutdown"))],
+)
+def test_extract_commands_filters_comments_and_blank_lines_preserving_cli(
+    rendered_text: str, expected: tuple[str, ...],
+) -> None:
+    """Omite comentarios y lineas vacias conservando orden, indentacion y texto CLI."""
+    assert extract_commands(rendered_text) == expected
+
+
+def test_compute_plan_sha256_preserves_artifact_order_and_identity() -> None:
+    """Incluye indice, identidad y huella de cada artefacto en el orden recibido."""
+    first = _artifact()
+    second = replace(first, hop_index=1, node_id="LAB-TRANSIT")
+    expected_content = f"0:192.0.2.11:{first.sha256}|1:LAB-TRANSIT:{second.sha256}"
+    expected_reverse = f"1:LAB-TRANSIT:{second.sha256}|0:192.0.2.11:{first.sha256}"
+    assert compute_plan_sha256((first, second)) == compute_sha256(expected_content)
+    assert compute_plan_sha256((second, first)) == compute_sha256(expected_reverse)
+    assert compute_plan_sha256((first, second)) != compute_plan_sha256((second, first))
+    assert compute_plan_sha256((first,)) != compute_plan_sha256((replace(first, hop_index=1),))
+    assert compute_plan_sha256((first,)) != compute_plan_sha256((replace(first, node_id="LAB-ACCESS"),))
+    changed_text = "interface uplink\n shutdown\n"
+    changed = replace(
+        first, rendered_text=changed_text, commands=("interface uplink", " shutdown"),
+        sha256=compute_sha256(changed_text),
+    )
+    assert compute_plan_sha256((first,)) != compute_plan_sha256((changed,))
+    assert compute_plan_sha256(()) == compute_sha256("")
 
 
 def test_renderer_resolves_vendor_resources_and_normalizes_without_escaping() -> None:
