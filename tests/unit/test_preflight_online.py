@@ -120,6 +120,78 @@ def test_huawei_port_parser_matches_only_the_requested_interface() -> None:
     assert parse_access_port_vlan(output, "huawei", "GigabitEthernet0/0/2") is None
 
 
+@pytest.mark.parametrize("original,replacement", [
+    ("Administrative Mode: static access", "Administrative Mode: trunk"),
+    ("Operational Mode: static access", "Operational Mode: trunk"),
+    ("Switchport: Enabled", "Switchport: Disabled"),
+    ("Name: Gi1/0/1", "Name: Gi1/0/2"),
+    ("Name: Gi1/0/1", "Name: invalid"),
+    ("Administrative Mode: static access\nOperational Mode: static access\n", ""),
+    ("Access Mode VLAN: 1 (default)\n", ""),
+])
+def test_cisco_port_parser_rejects_unconfirmed_access_state(
+    original: str, replacement: str,
+) -> None:
+    """Rechaza modo ajeno a access, switchport deshabilitado o identidad y campos invalidos."""
+    output = _fixture("cisco_show_interfaces_switchport_free.txt").replace(original, replacement)
+    assert parse_access_port_vlan(output, "cisco", "GigabitEthernet1/0/1") is None
+
+
+@pytest.mark.parametrize("mode_fields", [
+    "Administrative Mode: static access\nOperational Mode: static access",
+    "Administrative Mode: access\nOperational Mode: access",
+    "Administrative Mode: static access",
+    "Operational Mode: access",
+])
+@pytest.mark.parametrize("optional_fields", [True, False])
+def test_cisco_port_parser_accepts_equivalent_name_and_each_valid_access_mode(
+    mode_fields: str, optional_fields: bool,
+) -> None:
+    """Acepta al menos un modo access valido y permite omitir Name y Switchport."""
+    output = _fixture("cisco_show_interfaces_switchport_free.txt").replace(
+        "Administrative Mode: static access\nOperational Mode: static access", mode_fields,
+    )
+    if not optional_fields:
+        output = output.replace("Name: Gi1/0/1\n", "").replace("Switchport: Enabled\n", "")
+    assert parse_access_port_vlan(output, "cisco", "GigabitEthernet1/0/1") == 1
+
+
+@pytest.mark.parametrize("link_type", ["trunk", "hybrid"])
+def test_huawei_port_parser_rejects_non_access_link_type_with_pvid_one(link_type: str) -> None:
+    """Un PVID 1 no habilita puertos Huawei de tipo trunk o hybrid."""
+    output = _fixture("huawei_display_port_vlan_free.txt").replace("access", link_type)
+    assert parse_access_port_vlan(output, "huawei", "GE0/0/1") is None
+
+
+@pytest.mark.parametrize("service", _SERVICES)
+@pytest.mark.parametrize("pe_vendor", ["cisco", "huawei"])
+@pytest.mark.parametrize("port_state", ["trunk", "absent"])
+def test_preflight_reports_busy_for_access_port_without_confirmed_access_mode(
+    service: str, pe_vendor: str, port_state: str,
+) -> None:
+    """Emite CLIENT_PORT_BUSY con ubicacion exacta ante trunk con VLAN 1 o salida vacia."""
+    intent = _intent(service, pe_vendor)
+    transport = _transport(intent)
+    if intent.access.vendor == "cisco":
+        command = f"show interfaces {intent.access.customer_port} switchport"
+        output = _fixture("cisco_show_interfaces_switchport_free.txt").replace("static access", "trunk")
+    else:
+        command = f"display port vlan {intent.access.customer_port}"
+        output = _fixture("huawei_display_port_vlan_free.txt").replace("access", "trunk")
+    transport.set_show_output(intent.access.node_id, command, output if port_state == "trunk" else "")
+    issues = build_online_preflight_checker(transport=transport).check_preflight(intent)
+    assert len(issues) == 1
+    issue = issues[0]
+    assert issue.code == "CLIENT_PORT_BUSY"
+    assert issue.stage == ValidationStage.PREFLIGHT_ONLINE
+    assert issue.field_path == "hops[0].customer_port"
+    assert issue.node_id == intent.access.node_id
+    assert issue.message == (
+        f"customer_port: el puerto {intent.access.customer_port} no se encuentra "
+        f"en modo access libre en {intent.access.node_id}."
+    )
+
+
 @pytest.mark.parametrize("service", _SERVICES)
 @pytest.mark.parametrize("pe_vendor", ["cisco", "huawei"])
 def test_clean_preflight_checks_each_hop_in_order_read_only(service: str, pe_vendor: str) -> None:

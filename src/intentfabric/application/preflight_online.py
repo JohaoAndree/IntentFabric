@@ -29,8 +29,23 @@ def parse_active_vlans(output: str, vendor: str) -> frozenset[int]:
 
 
 def parse_access_port_vlan(output: str, vendor: str, interface_name: str) -> int | None:
-    """Extrae la VLAN de acceso o el PVID de la interfaz solicitada."""
+    """Extrae la VLAN o el PVID solo si la interfaz solicitada esta en modo access."""
     if vendor == "cisco":
+        names = re.findall(r"^[ \t]*Name:[ \t]*(.*)$", output, re.MULTILINE)
+        try:
+            if any(not are_equivalent_interfaces(name.strip(), interface_name, vendor=vendor)
+                   for name in names):
+                return None
+        except InvalidInterfaceNameError:
+            return None
+        switchport_states = re.findall(r"^[ \t]*Switchport:[ \t]*(.*)$", output, re.MULTILINE)
+        if any(state.strip().lower() != "enabled" for state in switchport_states):
+            return None
+        modes = re.findall(
+            r"^[ \t]*(?:Administrative Mode|Operational Mode):[ \t]*(.*)$", output, re.MULTILINE,
+        )
+        if not modes or any(mode.strip().lower() not in ("static access", "access") for mode in modes):
+            return None
         match = re.search(r"Access Mode VLAN:\s*(\d+)", output)
         return int(match.group(1)) if match is not None else None
     for line in output.splitlines():
@@ -42,7 +57,7 @@ def parse_access_port_vlan(output: str, vendor: str, interface_name: str) -> int
         except InvalidInterfaceNameError:
             continue
         if matches:
-            return int(columns[2])
+            return int(columns[2]) if columns[1].lower() == "access" else None
     return None
 
 
@@ -121,7 +136,13 @@ class OnlinePreFlightChecker:
                        else f"display port vlan {hop.customer_port}")
             output = self._transport.execute_show(node, command)
             pvid = parse_access_port_vlan(output, node.vendor, hop.customer_port)
-            if pvid is not None and pvid != 1:
+            if pvid is None:
+                issues.append(_issue(
+                    "CLIENT_PORT_BUSY",
+                    f"customer_port: el puerto {hop.customer_port} no se encuentra en modo access libre en {node.node_id}.",
+                    "hops[0].customer_port", node.node_id,
+                ))
+            elif pvid != 1:
                 issues.append(_issue(
                     "CLIENT_PORT_BUSY",
                     f"customer_port: el puerto {hop.customer_port} ya pertenece a la VLAN {pvid} en {node.node_id}.",
