@@ -2,6 +2,7 @@
 
 from dataclasses import FrozenInstanceError, replace
 from ipaddress import IPv4Address
+import json
 from pathlib import Path
 
 import pytest
@@ -300,3 +301,56 @@ def test_resolver_rejects_missing_or_duplicate_interface_aliases() -> None:
         with pytest.raises(TopologyPathResolutionError) as error:
             resolver.resolve_access_to_pe_hops(access_node_id="S3-9306-TEST", pe_node_id="PE2-TEST", **arguments)
         assert error.value.code == "TOPOLOGY_INTERFACE_NOT_FOUND"
+
+
+@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("asn", (True, False, "65000", 65000.0, [], [65000], {}, {"value": 65000}))
+def test_non_pe_asn_rejects_non_integer_types_in_catalog(node_id: str, asn: object) -> None:
+    """Impide incorporar ASN mutables o no enteros al catalogo de acceso y transito."""
+    original = _catalog()
+    with pytest.raises(TopologyValidationError, match="asn"):
+        TopologyCatalog((replace(original.get_node(node_id), asn=asn),), ())
+    assert original.get_node(node_id).asn is None
+
+
+@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("asn", (True, False, "65000", 65000.0, [], [65000], {}, {"value": 65000}))
+def test_yaml_non_pe_asn_rejects_non_integer_types(tmp_path: Path, node_id: str, asn: object) -> None:
+    """Rechaza los mismos tipos ASN invalidos al cargar nodos no PE desde YAML."""
+    node = _catalog().get_node(node_id)
+    document = (_ROOT / "inventory/topology.yaml").read_text(encoding="utf-8")
+    anchor = f"    management_ip: {node.management_ip}\n"
+    path = tmp_path / "invalid_asn.yaml"
+    path.write_text(document.replace(anchor, anchor + f"    asn: {json.dumps(asn)}\n"), encoding="utf-8", newline="\n")
+    with pytest.raises(TopologyValidationError, match="asn"):
+        YamlTopologyRepository(path).load_catalog()
+
+
+@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("asn", (None, 65000, 65001))
+def test_non_pe_asn_remains_optional_and_immutable(tmp_path: Path, node_id: str, asn: int | None) -> None:
+    """Conserva ASN opcional y entero en construccion directa y carga YAML sin exigir loopback."""
+    original = _catalog()
+    node = original.get_node(node_id)
+    assert node.asn is None
+    assert node.loopback0_ip is None
+    expected = replace(node, asn=asn)
+    document = (_ROOT / "inventory/topology.yaml").read_text(encoding="utf-8")
+    anchor = f"    management_ip: {node.management_ip}\n"
+    path = tmp_path / "valid_asn.yaml"
+    path.write_text(document.replace(anchor, anchor + f"    asn: {json.dumps(asn)}\n"), encoding="utf-8", newline="\n")
+    loaded = YamlTopologyRepository(path).load_catalog()
+    assert loaded.get_node(node_id) == expected
+    assert loaded.get_node(node_id).asn is None or type(loaded.get_node(node_id).asn) is int
+    with pytest.raises(FrozenInstanceError):
+        loaded.get_node(node_id).asn = 65002
+
+
+@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+def test_non_pe_asn_rejects_integer_subclasses(node_id: str) -> None:
+    """Exige int exacto incluso frente a subclases de entero en nodos no PE."""
+    class InheritedAsn(int):
+        pass
+
+    with pytest.raises(TopologyValidationError, match="asn"):
+        replace(_catalog().get_node(node_id), asn=InheritedAsn(65000))

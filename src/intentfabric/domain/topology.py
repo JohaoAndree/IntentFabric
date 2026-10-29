@@ -52,8 +52,10 @@ class TopologyNode:
             raise TopologyValidationError(f"{self.node_id}.management_ip: se requiere IPv4Address")
         if self.loopback0_ip is not None and not isinstance(self.loopback0_ip, IPv4Address):
             raise TopologyValidationError(f"{self.node_id}.loopback0_ip: se requiere IPv4Address")
+        if self.asn is not None and type(self.asn) is not int:
+            raise TopologyValidationError(f"{self.node_id}.asn: se requiere None o un int exacto")
         if self.role == NodeRole.PROVIDER_EDGE and (
-            self.loopback0_ip is None or type(self.asn) is not int or not 1 <= self.asn <= 4294967295
+            self.loopback0_ip is None or self.asn is None or not 1 <= self.asn <= 4294967295
         ):
             raise TopologyValidationError(f"{self.node_id}: PE requiere loopback0_ip y asn en 1..4294967295")
         if not isinstance(self.interfaces, tuple) or not self.interfaces:
