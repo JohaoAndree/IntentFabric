@@ -1,0 +1,20 @@
+traffic classifier {{ qos_policy }} operator or
+ if-match any
+quit
+traffic behavior {{ qos_policy }}
+ car cir {{ cir_kbps }} pir {{ pir_kbps }}
+quit
+traffic policy {{ qos_policy }}
+ classifier {{ qos_policy }} behavior {{ qos_policy }}
+quit
+interface {{ pe_subinterface }}
+ description {{ description }}
+ dot1q termination vid {{ vlan_id }}
+ ip binding vpn-instance {{ vrf_name }}
+ ip address {{ wan_pe_ip }} {{ wan_netmask }}
+ arp broadcast enable
+ traffic-policy {{ qos_policy }} inbound
+ traffic-policy {{ qos_policy }} outbound
+ undo shutdown
+quit
+ip route-static vpn-instance {{ vrf_name }} {{ lan_network_address }} {{ lan_netmask }} {{ wan_ce_ip }}

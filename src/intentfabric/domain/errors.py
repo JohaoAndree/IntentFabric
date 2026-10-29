@@ -1,6 +1,7 @@
 """Errores de dominio (IntentFabricError), interpretacion, plugins y validacion previa (PreValidationFailedError)."""
 
 from intentfabric.domain.validation import ValidationReport
+from intentfabric.domain.template_key import TemplateKey
 
 
 class IntentFabricError(Exception):
@@ -25,6 +26,15 @@ class PluginConsistencyError(IntentFabricError):
 
 class TemplateNotFoundError(IntentFabricError):
     """Indica que una plantilla o la raíz de su vendor no está disponible."""
+
+
+class TemplateRenderError(IntentFabricError):
+    """Expone la plantilla y la causa de un fallo de renderizado estricto."""
+
+    def __init__(self, template_key: TemplateKey, cause: str) -> None:
+        self.template_key = template_key
+        self.cause = cause
+        super().__init__(f"{template_key}: error de renderizado; {cause}")
 
 
 class PreValidationFailedError(IntentFabricError):

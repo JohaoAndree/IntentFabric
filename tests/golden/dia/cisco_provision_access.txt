@@ -1,0 +1,12 @@
+vlan 3001
+ name LAB#INTE#0001
+exit
+interface GigabitEthernet0/0/1
+ description LAB#INTE#0001
+ switchport mode access
+ switchport access vlan 3001
+ no shutdown
+exit
+interface GigabitEthernet0/0/24
+ switchport trunk allowed vlan add 3001
+exit

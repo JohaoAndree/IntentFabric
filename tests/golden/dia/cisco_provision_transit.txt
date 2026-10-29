@@ -1,0 +1,9 @@
+vlan 3001
+ name LAB#INTE#0001
+exit
+interface GigabitEthernet1/0/23
+ switchport trunk allowed vlan add 3001
+exit
+interface GigabitEthernet1/0/24
+ switchport trunk allowed vlan add 3001
+exit

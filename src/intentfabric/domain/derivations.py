@@ -4,6 +4,10 @@ from dataclasses import dataclass
 from ipaddress import IPv4Address, IPv4Network
 
 
+_KBPS_PER_MBPS = 1_000
+_BPS_PER_KBPS = 1_000
+
+
 @dataclass(frozen=True)
 class WanAddresses:
     """Agrupa el direccionamiento de los extremos de una WAN /30."""
@@ -21,6 +25,19 @@ class QosRates:
 
     cir_kbps: int
     pir_kbps: int
+
+    @property
+    def cir_bps(self) -> int:
+        """Expresa la tasa comprometida en bits por segundo."""
+        return self.cir_kbps * _BPS_PER_KBPS
+
+    @property
+    def pir_bps(self) -> int:
+        """Expresa la tasa maxima en bits por segundo."""
+        return self.pir_kbps * _BPS_PER_KBPS
+
+
+BandwidthRates = QosRates
 
 
 def derive_wan_addresses(wan_network: IPv4Network) -> WanAddresses:
@@ -42,11 +59,14 @@ def derive_subinterface_name(parent_interface: str, vlan_id: int) -> str:
 
 
 def derive_qos_rates(bandwidth_mbps: int) -> QosRates:
-    """Calcula tasas enteras con redondeo hacia arriba en mitades (ADR-003 §8.2).
+    """Deriva CIR y PIR iguales en base decimal para un servicio garantizado.
 
     Exige un ancho de banda entero positivo y rechaza booleanos.
     """
     if type(bandwidth_mbps) is not int or bandwidth_mbps <= 0:
         raise ValueError("bandwidth_mbps: se requiere un entero positivo")
-    pir_kbps = ((bandwidth_mbps * 1024 * 105) + 50) // 100
-    return QosRates(cir_kbps=(pir_kbps + 5) // 10, pir_kbps=pir_kbps)
+    rate_kbps = bandwidth_mbps * _KBPS_PER_MBPS
+    return QosRates(cir_kbps=rate_kbps, pir_kbps=rate_kbps)
+
+
+derive_bandwidth_rates = derive_qos_rates

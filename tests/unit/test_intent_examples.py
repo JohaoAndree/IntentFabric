@@ -35,4 +35,5 @@ def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
     assert catalog.parse_intent(json_raw) == catalog.parse_intent(yaml_raw) == expected
     assert catalog.parse_intent(json_raw) == catalog.parse_intent(json_raw)
     assert derive_wan_addresses(expected.wan_network).pe_address == IPv4Address("10.255.0.1")
-    assert derive_qos_rates(expected.bandwidth_mbps).cir_kbps == 5376
+    assert derive_qos_rates(expected.bandwidth_mbps).cir_kbps == 50_000
+    assert derive_qos_rates(expected.bandwidth_mbps).pir_kbps == 50_000

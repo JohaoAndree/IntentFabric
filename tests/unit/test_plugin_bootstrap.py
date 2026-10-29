@@ -13,14 +13,17 @@ from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 
 
-def test_verified_catalog_accepts_current_vendors_without_templates() -> None:
-    """Verifica los vendors reales con DIA registrado y ninguna plantilla declarada aún."""
+def test_verified_catalog_accepts_all_twelve_dia_templates() -> None:
+    """Verifica DIA y todas las plantillas empaquetadas de los vendors reales."""
     catalog = bootstrap.build_verified_catalog()
     assert catalog.vendor_ids() == frozenset({"cisco", "huawei"})
     assert catalog.service_types() == frozenset({"DIA"})
     assert catalog.verify_consistency(bootstrap.build_template_source()) == ()
-    key = TemplateKey("DIA", Operation.PROVISION, NodeRole.ACCESS)
-    assert not catalog.supports("cisco", key)
+    for vendor_id in ("cisco", "huawei"):
+        for operation in Operation:
+            for role in NodeRole:
+                key = TemplateKey("DIA", operation, role)
+                assert catalog.supports(vendor_id, key)
 
 
 def test_template_source_uses_registered_package_roots() -> None:

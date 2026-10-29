@@ -1,0 +1,12 @@
+vlan 3001
+ description LAB#INTE#0001
+quit
+interface GigabitEthernet0/0/1
+ description LAB#INTE#0001
+ port link-type access
+ port default vlan 3001
+ undo shutdown
+quit
+interface GigabitEthernet0/0/24
+ port trunk allow-pass vlan 3001
+quit

@@ -1,0 +1,9 @@
+vlan {{ vlan_id }}
+ name {{ description }}
+exit
+interface {{ ingress_interface }}
+ switchport trunk allowed vlan add {{ vlan_id }}
+exit
+interface {{ egress_interface }}
+ switchport trunk allowed vlan add {{ vlan_id }}
+exit

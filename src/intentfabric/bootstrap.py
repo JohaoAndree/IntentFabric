@@ -4,7 +4,12 @@ from importlib.resources import files
 from types import ModuleType
 
 from intentfabric.adapters.packaged_template_source import PackagedTemplateSource
+from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
+from intentfabric.application.generation import DeterministicGeneratorService
 from intentfabric.application.plugin_catalog import PluginCatalog
+from intentfabric.application.pre_validation import PreValidationService
+from intentfabric.application.template_source import TemplateSource
+from intentfabric.services.dia.context_builder import build_dia_hop_context
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 from intentfabric.services.dia.validator import validate_dia_intent_semantics
 from intentfabric.vendors import cisco, huawei
@@ -28,6 +33,11 @@ def build_plugin_catalog() -> PluginCatalog:
         catalog.register_vendor(package.VENDOR_DEFINITION)
     catalog.register_service(DiaIntentParser(known_vendors=catalog.vendor_ids()))
     catalog.register_service_validator(DiaIntentParser.service_type, validate_dia_intent_semantics)
+    catalog.register_context_builder(DiaIntentParser.service_type, build_dia_hop_context)
+    if "cisco" in catalog.vendor_ids():
+        catalog.register_vendor_qos_builder("cisco", cisco.build_cisco_qos_context)
+    if "huawei" in catalog.vendor_ids():
+        catalog.register_vendor_qos_builder("huawei", huawei.build_huawei_qos_context)
     return catalog
 
 
@@ -36,3 +46,23 @@ def build_verified_catalog() -> PluginCatalog:
     catalog = build_plugin_catalog()
     catalog.assert_consistent(build_template_source())
     return catalog
+
+
+def build_generator(
+    catalog: PluginCatalog | None = None, template_source: TemplateSource | None = None,
+    pre_validator: PreValidationService | None = None,
+) -> DeterministicGeneratorService:
+    """Compone el generador con recursos empaquetados y validacion previa por defecto."""
+    if catalog is None:
+        catalog = build_plugin_catalog()
+    if template_source is None:
+        template_source = build_template_source()
+    if pre_validator is None:
+        pre_validator = PreValidationService(catalog)
+    return DeterministicGeneratorService(
+        catalog, JinjaTemplateRenderer(catalog, template_source), pre_validator,
+    )
+
+
+create_default_catalog = build_plugin_catalog
+create_default_generator = build_generator

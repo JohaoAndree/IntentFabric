@@ -22,8 +22,8 @@ def valid_raw() -> dict[str, Any]:
             {"role": "access", "vendor": "huawei", "management_ip": "192.0.2.11",
              "customer_port": "GigabitEthernet0/0/1", "uplink_interface": "GigabitEthernet0/0/24"},
             {"role": "transit", "vendor": "cisco", "management_ip": "192.0.2.12",
-             "access_facing_interface": "GigabitEthernet1/0/23",
-             "pe_facing_interface": "GigabitEthernet1/0/24"},
+             "downstream_interface": "GigabitEthernet1/0/23",
+             "upstream_interface": "GigabitEthernet1/0/24"},
             {"role": "pe", "vendor": "huawei", "management_ip": "192.0.2.21",
              "parent_interface": "GigabitEthernet0/0/1"},
         ],
@@ -62,8 +62,8 @@ def test_parser_preserves_data_and_does_not_mutate_input(valid_raw: dict[str, An
     assert intent.access.uplink_interface == "GigabitEthernet0/0/24"
     assert intent.transits[0].vendor == "cisco"
     assert intent.transits[0].management_ip == IPv4Address("192.0.2.12")
-    assert intent.transits[0].access_facing_interface == "GigabitEthernet1/0/23"
-    assert intent.transits[0].pe_facing_interface == "GigabitEthernet1/0/24"
+    assert intent.transits[0].downstream_interface == "GigabitEthernet1/0/23"
+    assert intent.transits[0].upstream_interface == "GigabitEthernet1/0/24"
     assert intent.provider_edge.vendor == "huawei"
     assert intent.provider_edge.management_ip == IPv4Address("192.0.2.21")
     assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/1"
@@ -186,13 +186,13 @@ def test_every_root_field_is_required(valid_raw: dict[str, Any], field: str) -> 
 @pytest.mark.parametrize(
     ("index", "field"),
     [(0, "vendor"), (0, "management_ip"), (0, "customer_port"), (0, "uplink_interface"),
-     (1, "role"), (1, "management_ip"), (1, "access_facing_interface"),
-     (1, "pe_facing_interface"), (2, "role"), (2, "vendor"), (2, "management_ip")],
+     (1, "role"), (1, "management_ip"), (1, "downstream_interface"),
+     (1, "upstream_interface"), (2, "role"), (2, "vendor"), (2, "management_ip")],
 )
 def test_remaining_hop_fields_are_required(
     valid_raw: dict[str, Any], index: int, field: str,
 ) -> None:
-    """Exige los campos de salto restantes con su índice y nombre en el error."""
+    """Exige los campos de salto restantes con su indice y nombre en el error."""
     del valid_raw["path"][index][field]
     with pytest.raises(IntentParseError) as error:
         _parser().parse(valid_raw)
@@ -210,8 +210,8 @@ def test_remaining_hop_fields_are_required(
      (("lan_network",), "invalid", "lan_network: red IPv4 inválida o con bits de host activos"),
      (("lan_network",), "2001:db8::/64", "lan_network: se requiere una red IPv4"),
      (("path", 0, "uplink_interface"), None, "path[0].uplink_interface: se requiere texto"),
-     (("path", 1, "access_facing_interface"), 1, "path[1].access_facing_interface: se requiere texto"),
-     (("path", 1, "pe_facing_interface"), False, "path[1].pe_facing_interface: se requiere texto"),
+     (("path", 1, "downstream_interface"), 1, "path[1].downstream_interface: se requiere texto"),
+     (("path", 1, "upstream_interface"), False, "path[1].upstream_interface: se requiere texto"),
      (("path", 0, "vendor"), None, "path[0].vendor: se requiere texto"),
      (("path", 0, "extra"), 1, "path[0].extra: campo desconocido"),
      (("path", 2, "extra"), 1, "path[2].extra: campo desconocido")],
