@@ -1,10 +1,10 @@
-interface GigabitEthernet0/0/1
+interface GigabitEthernet1/0/1
  no description
  no switchport access vlan
  no switchport mode
  shutdown
 exit
-interface GigabitEthernet0/0/24
- switchport trunk allowed vlan remove 3001
+interface GigabitEthernet1/0/10
+ switchport trunk allowed vlan remove 10
 exit
-no vlan 3001
+no vlan 10

@@ -36,6 +36,8 @@ class IntentParserRegistry:
         service_type = raw["service_type"]
         if not isinstance(service_type, str):
             raise IntentParseError("service_type: se requiere texto")
+        if service_type.strip().upper() == "DIA":
+            service_type = "DIA"
         if service_type not in self._parsers:
             registered = ", ".join(sorted(self._parsers)) or "ninguno"
             raise IntentParseError(

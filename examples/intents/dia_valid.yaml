@@ -1,25 +1,11 @@
-schema_version: "1"
 service_type: DIA
-description: "LAB#INTE#0001"
-vlan_id: 3001
-vrf_name: LAB-INTERNET
-wan_network: 10.255.0.0/30
-lan_network: 203.0.113.0/29
-bandwidth_mbps: 50
-qos:
-  policy_name: LAB_50MB_PARENT
-path:
-  - role: access
-    vendor: huawei
-    management_ip: 192.0.2.11
-    customer_port: GigabitEthernet0/0/1
-    uplink_interface: GigabitEthernet0/0/24
-  - role: transit
-    vendor: cisco
-    management_ip: 192.0.2.12
-    downstream_interface: GigabitEthernet1/0/23
-    upstream_interface: GigabitEthernet1/0/24
-  - role: pe
-    vendor: huawei
-    management_ip: 192.0.2.21
-    parent_interface: GigabitEthernet0/0/1
+description: TEST-0000000001
+vlan_id: 10
+wan_subnet: 192.168.10.0/30
+lan_subnet: 10.50.1.8/29
+bandwidth_mbps: 100
+vrf_name: TEST-INTERNET
+qos_policy_name: TEST_POLICY
+access_node_id: S3-9306-TEST
+access_interface: GigabitEthernet1/0/1
+pe_node_id: PE2-TEST

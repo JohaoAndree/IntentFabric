@@ -16,6 +16,7 @@ def build_dia_hop_context(
         "service_type": intent.service_type, "operation": operation.value,
         "description": intent.description, "vlan_id": intent.vlan_id,
         "vendor": hop.vendor, "role": hop.role.value,
+        "node_id": hop.node_id,
         "management_ip": str(hop.management_ip),
     }
     if isinstance(hop, AccessHop):

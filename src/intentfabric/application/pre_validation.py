@@ -8,6 +8,7 @@ from intentfabric.application.plugin_catalog import PluginCatalog
 from intentfabric.domain.errors import PreValidationFailedError
 from intentfabric.domain.intent import AccessHop, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
+from intentfabric.domain.topology import TopologyCatalog
 from intentfabric.domain.validation import (
     ValidationIssue, ValidationReport, ValidationSeverity, ValidationStage,
 )
@@ -34,8 +35,10 @@ class PreValidationService:
 
     def __init__(
         self, catalog: PluginCatalog, preflight_checker: PreFlightCheckerPort | None = None,
+        topology: TopologyCatalog | None = None,
     ) -> None:
         self._catalog = catalog
+        self._topology = topology
         self._preflight_checker = (
             NoOpPreFlightChecker() if preflight_checker is None else preflight_checker
         )
@@ -75,6 +78,8 @@ class PreValidationService:
         self, intent: Any, operations: Sequence[str], variant: str,
     ) -> tuple[ValidationIssue, ...]:
         issues = list(_validate_path(intent))
+        if self._topology is not None:
+            issues.extend(_validate_topology(intent, self._topology))
         if intent.service_type not in self._catalog.service_types():
             issues.append(ValidationIssue(
                 code="UNSUPPORTED_SERVICE",
@@ -157,7 +162,16 @@ def _validate_path(intent: Any) -> tuple[ValidationIssue, ...]:
             stage=ValidationStage.STATIC_OFFLINE, field_path="hops",
         ))
     seen_addresses: set[IPv4Address] = set()
+    seen_node_ids: set[str] = set()
     for index, hop in enumerate(hops):
+        if hop.node_id in seen_node_ids:
+            issues.append(ValidationIssue(
+                code="DUPLICATE_NODE_HOP",
+                message="node_id: cada salto de la ruta debe tener una identidad distinta.",
+                stage=ValidationStage.STATIC_OFFLINE,
+                field_path=f"hops[{index}].node_id", node_id=hop.node_id,
+            ))
+        seen_node_ids.add(hop.node_id)
         if hop.management_ip in seen_addresses:
             issues.append(ValidationIssue(
                 code="DUPLICATE_MANAGEMENT_IP",
@@ -166,4 +180,53 @@ def _validate_path(intent: Any) -> tuple[ValidationIssue, ...]:
                 field_path=f"hops[{index}].management_ip", node_id=_node_identifier(hop),
             ))
         seen_addresses.add(hop.management_ip)
+    return tuple(issues)
+
+
+def _hop_interfaces(hop: AccessHop | TransitHop | ProviderEdgeHop) -> tuple[tuple[str, str], ...]:
+    if isinstance(hop, AccessHop):
+        return (("customer_port", hop.customer_port), ("uplink_interface", hop.uplink_interface))
+    if isinstance(hop, TransitHop):
+        return (("downstream_interface", hop.downstream_interface), ("upstream_interface", hop.upstream_interface))
+    if isinstance(hop, ProviderEdgeHop):
+        return (("parent_interface", hop.parent_interface),)
+    return ()
+
+
+def _validate_topology(intent: Any, topology: TopologyCatalog) -> tuple[ValidationIssue, ...]:
+    issues: list[ValidationIssue] = []
+    hops = _intent_hops(intent)
+    for index, hop in enumerate(hops):
+        node = topology.find_node(hop.node_id)
+        if node is None:
+            issues.append(ValidationIssue(
+                code="TOPOLOGY_NODE_NOT_FOUND", message="node_id: registre el nodo en el inventario.",
+                stage=ValidationStage.STATIC_OFFLINE,
+                field_path=f"hops[{index}].node_id", node_id=hop.node_id,
+            ))
+            continue
+        if (hop.vendor, _hop_role(hop), hop.management_ip) != (node.vendor, node.role, node.management_ip):
+            issues.append(ValidationIssue(
+                code="TOPOLOGY_NODE_ATTRIBUTE_MISMATCH",
+                message="hops: vendor, rol y management_ip deben coincidir con el inventario.",
+                stage=ValidationStage.STATIC_OFFLINE, field_path=f"hops[{index}]", node_id=hop.node_id,
+            ))
+        for attribute, interface in _hop_interfaces(hop):
+            if interface not in node.interfaces:
+                issues.append(ValidationIssue(
+                    code="TOPOLOGY_INTERFACE_NOT_FOUND",
+                    message=f"{attribute}: utilice una interfaz declarada en el inventario del nodo.",
+                    stage=ValidationStage.STATIC_OFFLINE,
+                    field_path=f"hops[{index}].{attribute}", node_id=hop.node_id,
+                ))
+    for index, (current_hop, next_hop) in enumerate(zip(hops, hops[1:])):
+        outgoing = getattr(current_hop, "uplink_interface", getattr(current_hop, "upstream_interface", None))
+        incoming = getattr(next_hop, "downstream_interface", getattr(next_hop, "parent_interface", None))
+        link = topology.find_link_between(current_hop.node_id, next_hop.node_id)
+        if link is None or link != (outgoing, incoming):
+            issues.append(ValidationIssue(
+                code="TOPOLOGY_LINK_NOT_FOUND",
+                message="hops: los saltos consecutivos deben utilizar los puertos del enlace inventariado.",
+                stage=ValidationStage.STATIC_OFFLINE, field_path=f"hops[{index}]", node_id=current_hop.node_id,
+            ))
     return tuple(issues)

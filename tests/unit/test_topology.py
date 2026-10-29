@@ -7,8 +7,9 @@ from pathlib import Path
 import pytest
 
 from intentfabric.adapters.yaml_topology_repository import YamlTopologyRepository
-from intentfabric.domain.errors import TopologyValidationError
-from intentfabric.domain.intent import NodeRole
+from intentfabric.application.topology import TopologyPathResolver
+from intentfabric.domain.errors import TopologyPathResolutionError, TopologyValidationError
+from intentfabric.domain.intent import AccessHop, NodeRole, ProviderEdgeHop, TransitHop
 from intentfabric.domain.topology import OsFamily, TopologyCatalog, TopologyLink, TopologyNode
 
 
@@ -170,6 +171,132 @@ def test_yaml_repository_translates_missing_file_and_encoding_errors(tmp_path: P
     path = tmp_path / "missing.yaml"
     with pytest.raises(TopologyValidationError, match="catalogo invalido"):
         YamlTopologyRepository(path).load_catalog()
+
     path.write_bytes(b"\xff")
     with pytest.raises(TopologyValidationError, match="catalogo invalido"):
         YamlTopologyRepository(path).load_catalog()
+
+
+@pytest.mark.parametrize(("access_id", "pe_id", "transit_id", "client", "uplink", "ingress", "egress", "parent"), (
+    ("S3-9306-TEST", "PE2-TEST", "S1-9306-TEST", "Gi1/0/1", "Gi1/0/10", "GE1/0/24", "GE1/0/25", "GE0/0/0"),
+    ("S3-4505-TEST", "PE1-TEST", "S1-4505-TEST", "GE0/0/1", "GE0/0/8", "Gi1/0/11", "Gi1/0/25", "Gi0/0/4"),
+))
+def test_resolver_builds_exact_hops_for_both_lab_routes(
+    access_id: str, pe_id: str, transit_id: str, client: str, uplink: str,
+    ingress: str, egress: str, parent: str,
+) -> None:
+    """Resuelve ambas ramas con puertos, identidad y gestion exactos del inventario."""
+    catalog = _catalog()
+    resolver = TopologyPathResolver(catalog)
+    assert resolver.catalog is catalog
+    access, transit, pe = (catalog.get_node(identifier) for identifier in (access_id, transit_id, pe_id))
+    expected = (
+        AccessHop(access_id, access.vendor, access.management_ip, client, uplink),
+        TransitHop(transit_id, transit.vendor, transit.management_ip, ingress, egress),
+        ProviderEdgeHop(pe_id, pe.vendor, pe.management_ip, parent),
+    )
+    assert resolver.resolve_access_to_pe_hops(access_node_id=access_id, access_interface=client, pe_node_id=pe_id) == expected
+    assert resolver.resolve_access_to_pe_hops(access_node_id=access_id, client_interface=client, pe_node_id=pe_id) == expected
+
+
+@pytest.mark.parametrize(("overrides", "code", "node_id"), (
+    ({"access_node_id": "absent"}, "TOPOLOGY_NODE_NOT_FOUND", "absent"),
+    ({"pe_node_id": "absent"}, "TOPOLOGY_NODE_NOT_FOUND", "absent"),
+    ({"access_node_id": "S1-9306-TEST"}, "TOPOLOGY_INVALID_NODE_ROLE", "S1-9306-TEST"),
+    ({"pe_node_id": "S1-9306-TEST"}, "TOPOLOGY_INVALID_NODE_ROLE", "S1-9306-TEST"),
+    ({"access_interface": "Gi1/0/99"}, "TOPOLOGY_INTERFACE_NOT_FOUND", "S3-9306-TEST"),
+    ({"access_interface": "Gi1/0/10"}, "TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", "S3-9306-TEST"),
+    ({"access_interface": "bad"}, "TOPOLOGY_INTERFACE_NOT_FOUND", "S3-9306-TEST"),
+    ({"pe_node_id": "PE1-TEST"}, "TOPOLOGY_PATH_NOT_FOUND", "PE1-TEST"),
+))
+def test_resolver_rejects_invalid_demarcations_with_exact_codes(
+    overrides: dict[str, str], code: str, node_id: str,
+) -> None:
+    """Distingue nodos ausentes, roles, interfaces, troncales y rutas no validas."""
+    arguments = {"access_node_id": "S3-9306-TEST", "access_interface": "Gi1/0/1", "pe_node_id": "PE2-TEST"}
+    with pytest.raises(TopologyPathResolutionError) as error:
+        TopologyPathResolver(_catalog()).resolve_access_to_pe_hops(**(arguments | overrides))
+    assert error.value.code == code
+    assert error.value.node_id == node_id
+
+
+def _alternative_routes() -> TopologyCatalog:
+    catalog = _catalog()
+    access = replace(catalog.get_node("S3-9306-TEST"), interfaces=("Gi0/1", "Gi0/2", "Gi0/3", "Gi0/4"))
+    pe = replace(catalog.get_node("PE2-TEST"), interfaces=("Gi0/1", "Gi0/2", "Gi0/4"))
+    transits = tuple(replace(
+        catalog.get_node("S1-9306-TEST"), node_id=f"T-{letter}", hostname=f"T-{letter}",
+        management_ip=IPv4Address(f"192.0.2.{index}"), interfaces=("Gi0/1", "Gi0/2", "Gi0/3"),
+    ) for index, letter in enumerate(("A", "B"), start=1))
+    return TopologyCatalog((access, pe, *transits), (
+        TopologyLink(access.node_id, "Gi0/3", "T-B", "Gi0/1"),
+        TopologyLink("T-B", "Gi0/2", pe.node_id, "Gi0/2"),
+        TopologyLink(access.node_id, "Gi0/2", "T-A", "Gi0/1"),
+        TopologyLink("T-A", "Gi0/2", pe.node_id, "Gi0/1"),
+        TopologyLink("T-A", "Gi0/3", "T-B", "Gi0/3"),
+    ))
+
+
+def test_bfs_breaks_ties_deterministically_and_terminates_with_cycles() -> None:
+    """Selecciona el transito lexicograficamente menor aunque existan ciclos y otro orden."""
+    catalog = _alternative_routes()
+    expected = None
+    for links in (catalog.links, tuple(reversed(catalog.links)), tuple(
+        TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
+        for link in catalog.links
+    )):
+        hops = TopologyPathResolver(TopologyCatalog(tuple(reversed(catalog.nodes)), links)).resolve_access_to_pe_hops(
+            access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+        )
+        assert tuple(hop.node_id for hop in hops) == ("S3-9306-TEST", "T-A", "PE2-TEST")
+        assert expected is None or hops == expected
+        expected = hops
+
+
+def test_bfs_prefers_direct_link_over_a_lexicographically_earlier_transit() -> None:
+    """Prioriza la ruta mas corta y admite acceso a PE sin transitos."""
+    catalog = _alternative_routes()
+    direct = TopologyLink("S3-9306-TEST", "Gi0/4", "PE2-TEST", "Gi0/4")
+    hops = TopologyPathResolver(replace(catalog, links=(*catalog.links, direct))).resolve_access_to_pe_hops(
+        access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+    )
+    assert len(hops) == 2
+    assert hops[0].uplink_interface == hops[1].parent_interface == "GigabitEthernet0/4"
+
+
+@pytest.mark.parametrize("intermediate_role", (NodeRole.ACCESS, NodeRole.PROVIDER_EDGE))
+def test_resolver_never_crosses_another_access_or_pe(intermediate_role: NodeRole) -> None:
+    """Rechaza conectividad fisica que obligue a atravesar otro acceso o PE."""
+    original = _alternative_routes()
+    intermediate = replace(original.get_node("T-A"), role=intermediate_role, loopback0_ip=IPv4Address("10.255.0.3"), asn=65000)
+    catalog = TopologyCatalog(tuple(intermediate if node.node_id == "T-A" else node for node in original.nodes), tuple(
+        link for link in original.links if "T-B" not in (link.source_node_id, link.target_node_id)
+    ))
+    with pytest.raises(TopologyPathResolutionError) as error:
+        TopologyPathResolver(catalog).resolve_access_to_pe_hops(
+            access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+        )
+    assert error.value.code == "TOPOLOGY_PATH_NOT_FOUND"
+
+
+def test_resolver_populates_multiple_transits_in_path_order() -> None:
+    """Conserva interfaces de ingreso y salida de cada transito en rutas de varios saltos."""
+    original = _alternative_routes()
+    links = tuple(link for link in original.links if not (
+        (link.source_node_id, link.target_node_id) in (("S3-9306-TEST", "T-B"), ("T-A", "PE2-TEST"))
+    ))
+    hops = TopologyPathResolver(replace(original, links=links)).resolve_access_to_pe_hops(
+        access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+    )
+    assert tuple(hop.node_id for hop in hops) == ("S3-9306-TEST", "T-A", "T-B", "PE2-TEST")
+    assert (hops[1].downstream_interface, hops[1].upstream_interface) == ("GigabitEthernet0/1", "GigabitEthernet0/3")
+    assert (hops[2].downstream_interface, hops[2].upstream_interface) == ("GigabitEthernet0/3", "GigabitEthernet0/2")
+
+
+def test_resolver_rejects_missing_or_duplicate_interface_aliases() -> None:
+    """Exige una sola demarcacion de interfaz de cliente al resolver una ruta."""
+    resolver = TopologyPathResolver(_catalog())
+    for arguments in ({}, {"access_interface": "Gi1/0/1", "client_interface": "Gi1/0/1"}):
+        with pytest.raises(TopologyPathResolutionError) as error:
+            resolver.resolve_access_to_pe_hops(access_node_id="S3-9306-TEST", pe_node_id="PE2-TEST", **arguments)
+        assert error.value.code == "TOPOLOGY_INTERFACE_NOT_FOUND"

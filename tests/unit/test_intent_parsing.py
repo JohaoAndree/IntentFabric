@@ -65,3 +65,13 @@ def test_registry_instances_do_not_share_state() -> None:
     first.register(_Parser("DIA"))
     with pytest.raises(IntentParseError, match="registrados: ninguno"):
         IntentParserRegistry().parse({"service_type": "DIA"})
+
+
+@pytest.mark.parametrize("service_type", ("DIA", "dia", " Dia "))
+def test_registry_dispatches_dia_alias_without_mutating_input(service_type: str) -> None:
+    """Despacha las variantes DIA autorizadas sin cambiar el objeto del operador."""
+    registry = IntentParserRegistry()
+    registry.register(_Parser("DIA"))
+    raw = {"service_type": service_type, "description": "LAB-DIA"}
+    assert registry.parse(raw) == ServiceIntent("LAB-DIA")
+    assert raw["service_type"] == service_type
