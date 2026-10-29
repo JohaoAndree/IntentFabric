@@ -15,9 +15,11 @@ from intentfabric.domain.generation import (
 from intentfabric.domain.validation import (
     ValidationIssue, ValidationReport, ValidationSeverity, ValidationStage,
 )
+from intentfabric.domain.topology import OsFamily, TopologyCatalog, TopologyLink, TopologyNode
 
 
 __all__ = (
+    "OsFamily", "TopologyCatalog", "TopologyLink", "TopologyNode",
     "InvalidInterfaceNameError", "TopologyPathResolutionError", "TopologyValidationError",
     "abbreviate_interface_name", "are_equivalent_interfaces", "normalize_interface_name",
     "split_subinterface",

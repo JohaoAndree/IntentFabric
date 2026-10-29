@@ -1,0 +1,91 @@
+nodes:
+  - node_id: S3-9306-TEST
+    hostname: S3-9306-TEST
+    model: C9300L-24T-4G
+    vendor: cisco
+    os_family: cisco_xe
+    role: access
+    management_ip: 192.168.56.101
+    interfaces:
+      - GigabitEthernet1/0/1
+      - GigabitEthernet1/0/2
+      - GigabitEthernet1/0/10
+  - node_id: S1-9306-TEST
+    hostname: S1-9306-TEST
+    model: S5735-L24P4XE
+    vendor: huawei
+    os_family: huawei
+    role: transit
+    management_ip: 192.168.56.102
+    interfaces:
+      - GigabitEthernet1/0/24
+      - GigabitEthernet1/0/25
+  - node_id: PE2-TEST
+    hostname: PE2-TEST
+    model: AR5710-S8T2XE
+    vendor: huawei
+    os_family: huawei_vrpv8
+    role: pe
+    management_ip: 192.168.56.103
+    loopback0_ip: 10.255.0.2
+    asn: 65000
+    interfaces:
+      - GigabitEthernet0/0/0
+      - GigabitEthernet0/0/1
+      - Loopback0
+  - node_id: S3-4505-TEST
+    hostname: S3-4505-TEST
+    model: S5735-L24P4XE
+    vendor: huawei
+    os_family: huawei
+    role: access
+    management_ip: 192.168.56.104
+    interfaces:
+      - GigabitEthernet0/0/1
+      - GigabitEthernet0/0/2
+      - GigabitEthernet0/0/8
+  - node_id: S1-4505-TEST
+    hostname: S1-4505-TEST
+    model: C9300L-24T-4G
+    vendor: cisco
+    os_family: cisco_xe
+    role: transit
+    management_ip: 192.168.56.105
+    interfaces:
+      - GigabitEthernet1/0/11
+      - GigabitEthernet1/0/25
+  - node_id: PE1-TEST
+    hostname: PE1-TEST
+    model: C8200L-1N-4T
+    vendor: cisco
+    os_family: cisco_xe
+    role: pe
+    management_ip: 192.168.56.106
+    loopback0_ip: 10.255.0.1
+    asn: 65000
+    interfaces:
+      - GigabitEthernet0/0/0
+      - GigabitEthernet0/0/4
+      - Loopback0
+
+links:
+  - source_node_id: S3-9306-TEST
+    source_interface: GigabitEthernet1/0/10
+    target_node_id: S1-9306-TEST
+    target_interface: GigabitEthernet1/0/24
+  - source_node_id: S1-9306-TEST
+    source_interface: GigabitEthernet1/0/25
+    target_node_id: PE2-TEST
+    target_interface: GigabitEthernet0/0/0
+  - source_node_id: S3-4505-TEST
+    source_interface: GigabitEthernet0/0/8
+    target_node_id: S1-4505-TEST
+    target_interface: GigabitEthernet1/0/11
+  - source_node_id: S1-4505-TEST
+    source_interface: GigabitEthernet1/0/25
+    target_node_id: PE1-TEST
+    target_interface: GigabitEthernet0/0/4
+  - source_node_id: PE1-TEST
+    source_interface: GigabitEthernet0/0/0
+    target_node_id: PE2-TEST
+    target_interface: GigabitEthernet0/0/1
