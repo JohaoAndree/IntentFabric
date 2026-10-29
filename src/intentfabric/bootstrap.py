@@ -9,7 +9,10 @@ from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
 from intentfabric.adapters.yaml_topology_repository import YamlTopologyRepository
 from intentfabric.application.generation import DeterministicGeneratorService
 from intentfabric.application.plugin_catalog import PluginCatalog
-from intentfabric.application.pre_validation import PreValidationService
+from intentfabric.application.pre_validation import PreFlightCheckerPort, PreValidationService
+from intentfabric.application.preflight_online import OnlinePreFlightChecker
+from intentfabric.application.deployment import DeploymentService
+from intentfabric.application.transport import DeviceTransportPort
 from intentfabric.application.template_source import TemplateSource
 from intentfabric.domain.topology import TopologyCatalog
 from intentfabric.services.dia.context_builder import build_dia_hop_context
@@ -86,6 +89,30 @@ def build_generator(
     return DeterministicGeneratorService(
         catalog, JinjaTemplateRenderer(catalog, template_source), pre_validator,
     )
+
+
+def build_online_preflight_checker(
+    topology: TopologyCatalog | None = None, *, transport: DeviceTransportPort,
+) -> OnlinePreFlightChecker:
+    """Compone el verificador online con el inventario indicado o por defecto."""
+    return OnlinePreFlightChecker(topology if topology is not None else load_default_topology(), transport)
+
+
+def build_pre_validator(
+    catalog: PluginCatalog | None = None, *, topology: TopologyCatalog | None = None,
+    preflight_checker: PreFlightCheckerPort | None = None,
+) -> PreValidationService:
+    """Compone validacion estatica y el verificador online opcional."""
+    topology = topology if topology is not None else load_default_topology()
+    catalog = catalog if catalog is not None else build_plugin_catalog(topology)
+    return PreValidationService(catalog, topology=topology, preflight_checker=preflight_checker)
+
+
+def build_deployment_service(
+    topology: TopologyCatalog | None = None, *, transport: DeviceTransportPort,
+) -> DeploymentService:
+    """Compone despliegue secuencial con inventario y transporte inyectable."""
+    return DeploymentService(topology if topology is not None else load_default_topology(), transport)
 
 
 create_default_catalog = build_plugin_catalog

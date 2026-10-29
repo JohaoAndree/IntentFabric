@@ -1,0 +1,5 @@
+Name: Gi1/0/1
+Switchport: Enabled
+Administrative Mode: static access
+Operational Mode: static access
+Access Mode VLAN: 1 (default)

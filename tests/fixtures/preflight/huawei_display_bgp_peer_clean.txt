@@ -1,0 +1,2 @@
+BGP local router ID : 192.0.2.2
+Local AS number : 65000
