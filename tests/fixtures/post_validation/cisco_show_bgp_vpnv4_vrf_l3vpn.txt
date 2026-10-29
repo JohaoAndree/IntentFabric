@@ -1,0 +1,2 @@
+Network Next Hop Metric LocPrf Weight Path
+*> 172.16.10.0/30 0.0.0.0 0 32768 ?

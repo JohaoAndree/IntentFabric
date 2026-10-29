@@ -1,0 +1,2 @@
+Routing Table: LAB-INTERNET
+S 10.50.1.8/29 [1/0] via 192.0.2.2

@@ -13,6 +13,7 @@ from intentfabric.application.pre_validation import PreFlightCheckerPort, PreVal
 from intentfabric.application.preflight_online import OnlinePreFlightChecker
 from intentfabric.application.deployment import DeploymentService
 from intentfabric.application.transport import DeviceTransportPort
+from intentfabric.application.post_validation import PostValidationTriageService
 from intentfabric.application.template_source import TemplateSource
 from intentfabric.domain.topology import TopologyCatalog
 from intentfabric.services.dia.context_builder import build_dia_hop_context
@@ -113,6 +114,13 @@ def build_deployment_service(
 ) -> DeploymentService:
     """Compone despliegue secuencial con inventario y transporte inyectable."""
     return DeploymentService(topology if topology is not None else load_default_topology(), transport)
+
+
+def build_post_validator(
+    topology: TopologyCatalog | None = None, *, transport: DeviceTransportPort,
+) -> PostValidationTriageService:
+    """Compone el triage posdespliegue con inventario y transporte inyectable."""
+    return PostValidationTriageService(topology if topology is not None else load_default_topology(), transport)
 
 
 create_default_catalog = build_plugin_catalog

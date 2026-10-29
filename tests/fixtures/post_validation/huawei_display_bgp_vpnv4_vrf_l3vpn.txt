@@ -1,0 +1,2 @@
+Network NextHop MED LocPrf PrefVal Path/Ogn
+*> 172.16.10.0/30 0.0.0.0 0 0 ?
