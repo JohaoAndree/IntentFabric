@@ -138,7 +138,7 @@ def parse_l2vpn_circuit_up(
                        and re.search(r"\b[1-9]\d* up,\s*0 down", block, re.I)
                        for block in blocks)
         return _parse_identified_up_block(
-            output, r"(?:EVPL\s+(?:instance|ID)|instance)", evi_id, r"(?:Evpl\s+)?State",
+            output, r"(?:EVPL\s+instance\s+ID|Instance\s+ID)", evi_id, r"(?:Evpl\s+)?State",
         )
     if variant == "martini_ldp":
         if vendor == "cisco":
@@ -349,4 +349,4 @@ class PostValidationTriageService:
             return (f"show mpls l2transport vc {intent.pw_id}" if node.vendor == "cisco"
                     else f"display mpls l2vc {intent.pw_id}")
         return ("show l2vpn evpn vpws" if node.vendor == "cisco"
-                else f"display evpl instance {intent.evi_id}")
+                else f"display bgp evpn evpl instance-id {intent.evi_id}")

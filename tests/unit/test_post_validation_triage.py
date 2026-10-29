@@ -20,6 +20,8 @@ https://www.cisco.com/c/en/us/td/docs/routers/sdwan/command/iosxe/qualified-cli-
 https://it.scribd.com/document/728143462/ATN-910-910I-910B-950B-V200R003C20-Commissioning-Guide-03-CLI
 EVPN Cisco:
 https://www.cisco.com/c/en/us/td/docs/routers/ncs4200/configuration/guide/segment-routing/17-1-1/b-segment-routing-17-1-ncs4200.pdf
+EVPN Huawei: formato de display bgp evpn evpl instance-id entregado y autorizado
+por el Responsable en esta conversacion el 29-10-2026 para ADR-011.
 Martini Cisco / Huawei (campos session state / VC state en ADR-011):
 https://www.cisco.com/c/en/us/td/docs/routers/ios-xe/mpls/mpls/m-mp-l2vpn-intrntwkg-xe.html
 https://it.scribd.com/document/728143462/ATN-910-910I-910B-950B-V200R003C20-Commissioning-Guide-03-CLI
@@ -110,7 +112,7 @@ def _transport(
             command = f"show mpls l2transport vc {intent.pw_id}" if cisco else f"display mpls l2vc {intent.pw_id}"
             fixture_name = "cisco_show_mpls_l2transport_vc_up.txt" if cisco else "huawei_display_mpls_l2vc_up.txt"
         else:
-            command = "show l2vpn evpn vpws" if cisco else f"display evpl instance {intent.evi_id}"
+            command = "show l2vpn evpn vpws" if cisco else f"display bgp evpn evpl instance-id {intent.evi_id}"
             fixture_name = "cisco_show_l2vpn_evpn_vpws_up.txt" if cisco else "huawei_display_evpl_instance_up.txt"
         transport.set_show_output(pe.node_id, command, _fixture(fixture_name))
     else:
@@ -286,8 +288,8 @@ def test_l3vpn_attributes_each_failure_to_its_first_step(vendor: str, failure: s
         validator.validate_and_require(intent)
 
 
-@pytest.mark.parametrize("vendor,variant", [("cisco", "default"), ("cisco", "evpn_vpws"),
-                                           ("cisco", "martini_ldp"), ("huawei", "martini_ldp")])
+@pytest.mark.parametrize("vendor", ["cisco", "huawei"])
+@pytest.mark.parametrize("variant", ["default", "evpn_vpws", "martini_ldp"])
 def test_l2vpn_queries_circuit_without_svi_or_mac_requirement(vendor: str, variant: str) -> None:
     """Valida variantes L2VPN sin sonda y sin exigir trafico de CE."""
     intent = _intent("l2vpn", vendor)
@@ -301,6 +303,8 @@ def test_l2vpn_queries_circuit_without_svi_or_mac_requirement(vendor: str, varia
     assert report.observed_state.mac_learned_nodes == ()
     assert all(record.mode == "show" for record in transport.history)
     assert report.steps[-1].commands_executed == transport.history[-1].commands
+    if vendor == "huawei" and variant in ("default", "evpn_vpws"):
+        assert transport.history[-1].commands == (f"display bgp evpn evpl instance-id {intent.evi_id}",)
 
 
 @pytest.mark.parametrize("vendor", ["cisco", "huawei"])
@@ -355,8 +359,8 @@ def test_factory_accepts_injected_topology() -> None:
     assert validator.validate(intent).is_compliant
 
 
-@pytest.mark.parametrize("vendor,variant", [("cisco", "default"), ("cisco", "evpn_vpws"),
-                                           ("cisco", "martini_ldp"), ("huawei", "martini_ldp")])
+@pytest.mark.parametrize("vendor", ["cisco", "huawei"])
+@pytest.mark.parametrize("variant", ["default", "evpn_vpws", "martini_ldp"])
 @pytest.mark.parametrize("failed_step", list(TriageStepName))
 def test_l2vpn_cascade_reports_exact_first_failed_node(
     vendor: str, variant: str, failed_step: TriageStepName,
@@ -368,7 +372,8 @@ def test_l2vpn_cascade_reports_exact_first_failed_node(
     if variant == "martini_ldp":
         circuit_command = f"show mpls l2transport vc {intent.pw_id}" if vendor == "cisco" else f"display mpls l2vc {intent.pw_id}"
     else:
-        circuit_command = "show l2vpn evpn vpws"
+        circuit_command = ("show l2vpn evpn vpws" if vendor == "cisco"
+                           else f"display bgp evpn evpl instance-id {intent.evi_id}")
     transport.set_show_output(pe.node_id, circuit_command, "")
     if failed_step == TriageStepName.PE_INTERFACE_STATE:
         target_node = pe.node_id
@@ -462,3 +467,59 @@ def test_lldp_queries_repeated_hop_node_only_once() -> None:
     lldp_records = [record for record in transport.history if "lldp" in record.commands[0]]
     assert [record.node_id for record in lldp_records] == list(dict.fromkeys(hop.node_id for hop in intent.hops))
     assert report.steps[1].passed
+
+
+@pytest.mark.parametrize("variant", ["default", "evpn_vpws"])
+@pytest.mark.parametrize("identifier_label", ["EVPL instance ID", "Instance ID"])
+@pytest.mark.parametrize("state_label", ["Evpl State", "State"])
+def test_huawei_evpn_parser_matches_authorized_labels_and_exact_identifier(
+    variant: str, identifier_label: str, state_label: str,
+) -> None:
+    """Acepta las etiquetas autorizadas y exige el EVI exacto con estado up."""
+    output = _fixture("huawei_display_evpl_instance_up.txt").replace(
+        "EVPL instance ID", identifier_label,
+    ).replace("Evpl State", state_label)
+    assert parse_l2vpn_circuit_up(output, "huawei", variant, pw_id=310, evi_id=310)
+    for other_identifier in (31, 3101, 3102):
+        assert not parse_l2vpn_circuit_up(output, "huawei", variant, pw_id=310, evi_id=other_identifier)
+
+
+@pytest.mark.parametrize("variant", ["default", "evpn_vpws"])
+@pytest.mark.parametrize("target_first", [True, False])
+def test_huawei_evpn_parser_does_not_borrow_state_from_other_instance(
+    variant: str, target_first: bool,
+) -> None:
+    """Rechaza el EVI caido aun si otra instancia anuncia estado up."""
+    output = _fixture("huawei_display_evpl_instance_up.txt")
+    target = output.replace(": up", ": down")
+    other = output.replace(": 310\n", ": 311\n")
+    mixed = target + other if target_first else other + target
+    assert not parse_l2vpn_circuit_up(mixed, "huawei", variant, pw_id=310, evi_id=310)
+
+
+@pytest.mark.parametrize("variant", ["default", "evpn_vpws"])
+@pytest.mark.parametrize("missing_field", ["EVPL instance ID", "Evpl State"])
+def test_huawei_evpn_parser_requires_both_instance_and_state(variant: str, missing_field: str) -> None:
+    """Rechaza salidas sin identidad de instancia o sin estado operativo."""
+    output = _fixture("huawei_display_evpl_instance_up.txt")
+    incomplete = "\n".join(line for line in output.splitlines() if missing_field not in line)
+    assert not parse_l2vpn_circuit_up(incomplete, "huawei", variant, pw_id=310, evi_id=310)
+
+
+@pytest.mark.parametrize("variant", ["default", "evpn_vpws"])
+def test_huawei_evpn_down_circuit_fails_control_plane_without_probe(variant: str) -> None:
+    """Localiza un circuito Huawei EVPN down en el PE sin crear una sonda SVI."""
+    intent = _intent("l2vpn", "huawei")
+    transport = _transport(intent, variant)
+    command = f"display bgp evpn evpl instance-id {intent.evi_id}"
+    output = _fixture("huawei_display_evpl_instance_up.txt").replace(": up", ": down")
+    transport.set_show_output(intent.provider_edge.node_id, command, output)
+    report = build_post_validator(transport=transport).validate(intent, variant=variant)
+    assert report.status == ServiceOperationalStatus.FAILED and report.sdc == 0
+    assert (report.root_cause_step, report.root_cause_node_id) == (
+        TriageStepName.SERVICE_CONTROL_AND_DATA_PLANE, intent.provider_edge.node_id,
+    )
+    assert all(step.passed for step in report.steps[:3])
+    assert not report.observed_state.control_plane_up
+    assert report.observed_state.svi_ping_success is None
+    assert all(record.mode == "show" for record in transport.history)
