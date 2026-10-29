@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, replace
 from enum import StrEnum
 
 from intentfabric.domain.derivations import derive_subinterface_name, derive_wan_addresses
-from intentfabric.domain.errors import UnsupportedCombinationError
+from intentfabric.domain.errors import PostValidationContractError, UnsupportedCombinationError
 from intentfabric.domain.intent import DiaIntent, L2VpnIntent, L3VpnIntent
 from intentfabric.domain.interfaces import normalize_interface_name
 
@@ -148,15 +148,15 @@ class TriageStepResult:
 
     def __post_init__(self) -> None:
         if not isinstance(self.step, TriageStepName):
-            raise ValueError("step: se requiere TriageStepName")
+            raise PostValidationContractError("step: se requiere TriageStepName")
         if type(self.passed) is not bool:
-            raise ValueError("passed: se requiere bool")
+            raise PostValidationContractError("passed: se requiere bool")
         for name in ("node_id", "details"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
-                raise ValueError(f"{name}: se requiere texto no vacio")
+                raise PostValidationContractError(f"{name}: se requiere texto no vacio")
         if not isinstance(self.commands_executed, tuple) or not self.commands_executed:
-            raise ValueError("commands_executed: se requiere una tupla no vacia")
+            raise PostValidationContractError("commands_executed: se requiere una tupla no vacia")
 
     def to_dict(self) -> dict[str, object]:
         """Serializa el eslabon con su identificador y comandos en orden fijo."""
@@ -181,16 +181,16 @@ class PostValidationReport:
 
     def __post_init__(self) -> None:
         if not isinstance(self.status, ServiceOperationalStatus):
-            raise ValueError("status: se requiere ServiceOperationalStatus")
+            raise PostValidationContractError("status: se requiere ServiceOperationalStatus")
         if type(self.sdc) is not int or self.sdc != int(self.status != ServiceOperationalStatus.FAILED):
-            raise ValueError("sdc: valor incompatible con status")
+            raise PostValidationContractError("sdc: valor incompatible con status")
         if not isinstance(self.steps, tuple) or not self.steps:
-            raise ValueError("steps: se requiere una tupla no vacia")
+            raise PostValidationContractError("steps: se requiere una tupla no vacia")
         if self.status == ServiceOperationalStatus.FAILED:
             if self.root_cause_step is None or self.root_cause_node_id is None:
-                raise ValueError("root_cause: se requiere paso y nodo para FAILED")
+                raise PostValidationContractError("root_cause: se requiere paso y nodo para FAILED")
         elif self.root_cause_step is not None or self.root_cause_node_id is not None:
-            raise ValueError("root_cause: debe ser None para sdc=1")
+            raise PostValidationContractError("root_cause: debe ser None para sdc=1")
 
     @property
     def is_compliant(self) -> bool:

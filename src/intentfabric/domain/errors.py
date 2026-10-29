@@ -14,6 +14,10 @@ class IntentFabricError(Exception):
     """Agrupa los errores explicitos del framework."""
 
 
+class PostValidationContractError(IntentFabricError):
+    """Indica una violacion de las invariantes de validacion posdespliegue."""
+
+
 class EphemeralProbeCleanupError(IntentFabricError):
     """Identifica una sonda SVI cuya eliminacion no pudo confirmarse."""
 

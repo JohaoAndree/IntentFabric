@@ -11,7 +11,7 @@ from intentfabric.bootstrap import build_plugin_catalog
 from intentfabric.domain import (
     DiaIntent, L2VpnIntent, L3VpnIntent,
     EphemeralProbeCleanupError, IntentFabricError, ObservedState, PostValidationFailedError,
-    PostValidationReport, ServiceOperationalStatus, TriageStepName, TriageStepResult,
+    PostValidationContractError, PostValidationReport, ServiceOperationalStatus, TriageStepName, TriageStepResult,
     build_ephemeral_svi_provision_commands, build_ephemeral_svi_teardown_commands,
     build_expected_state,
 )
@@ -96,7 +96,7 @@ def test_svi_commands_preserve_prescribed_syntax(vendor: str, interface: str, sh
 ])
 def test_triage_step_rejects_invalid_contract_fields(field: str, value: object) -> None:
     """Rechaza eslabones sin identidad, resultado booleano o comandos."""
-    with pytest.raises(ValueError, match=field):
+    with pytest.raises(PostValidationContractError, match=field):
         replace(_report().steps[0], **{field: value})
 
 
@@ -109,21 +109,21 @@ def test_report_enforces_sdc_and_root_cause(status: ServiceOperationalStatus) ->
                    root_cause_node_id="PE-LAB" if failed else None)
     report = replace(_report(), **changes)
     assert report.is_compliant is not failed
-    with pytest.raises(ValueError, match="sdc"):
+    with pytest.raises(PostValidationContractError, match="sdc"):
         replace(report, sdc=int(failed))
     if failed:
         for name in ("root_cause_step", "root_cause_node_id"):
-            with pytest.raises(ValueError, match="root_cause"):
+            with pytest.raises(PostValidationContractError, match="root_cause"):
                 replace(report, **{name: None})
     else:
-        with pytest.raises(ValueError, match="root_cause"):
+        with pytest.raises(PostValidationContractError, match="root_cause"):
             replace(report, root_cause_node_id="PE-LAB")
 
 
 @pytest.mark.parametrize("changes", [{"status": "OPERATIONAL"}, {"sdc": True}, {"steps": ()}])
 def test_report_rejects_invalid_types_or_empty_steps(changes: dict[str, object]) -> None:
     """Rechaza estados sin enumerado, SDC booleano y reportes vacios."""
-    with pytest.raises(ValueError):
+    with pytest.raises(PostValidationContractError):
         replace(_report(), **changes)
 
 
@@ -146,6 +146,7 @@ def test_models_are_frozen_slotted_and_serialize_in_fixed_order() -> None:
 
 def test_exceptions_preserve_context_and_report() -> None:
     """Expone contexto de limpieza y reporte fallido en errores del framework."""
+    assert issubclass(PostValidationContractError, IntentFabricError)
     cleanup = EphemeralProbeCleanupError("fallo", node_id="SW-LAB", vlan_id=210)
     assert isinstance(cleanup, IntentFabricError)
     assert (cleanup.node_id, cleanup.vlan_id) == ("SW-LAB", 210)

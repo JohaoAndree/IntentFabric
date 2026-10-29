@@ -9,7 +9,7 @@ from intentfabric.domain.deployment import (
     contains_cli_error, find_cli_error_line,
 )
 from intentfabric.domain.errors import CliCommandRejectedError, DeploymentError, DeviceTransportError
-from intentfabric.domain.errors import EphemeralProbeCleanupError, PostValidationFailedError
+from intentfabric.domain.errors import EphemeralProbeCleanupError, PostValidationContractError, PostValidationFailedError
 from intentfabric.domain.post_validation import (
     ExpectedState, ObservedState, PostValidationReport, ServiceOperationalStatus,
     TriageStepName, TriageStepResult, build_expected_state,
@@ -38,7 +38,7 @@ from intentfabric.domain.intent import (
 )
 
 __all__ = (
-    "EphemeralProbeCleanupError", "PostValidationFailedError", "ExpectedState", "ObservedState",
+    "EphemeralProbeCleanupError", "PostValidationContractError", "PostValidationFailedError", "ExpectedState", "ObservedState",
     "PostValidationReport", "ServiceOperationalStatus", "TriageStepName", "TriageStepResult",
     "build_expected_state", "build_ephemeral_svi_provision_commands",
     "build_ephemeral_svi_teardown_commands",

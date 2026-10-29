@@ -91,16 +91,38 @@ def parse_ping_success(output: str, vendor: str) -> bool:
 def parse_vrf_route_present(output: str, vendor: str, prefix: str) -> bool:
     """Busca un prefijo exacto en filas de rutas, excluyendo ecos y agregados."""
     expected = IPv4Network(prefix, strict=False)
+    inherited_length: str | None = None
     for line in output.splitlines():
+        if vendor == "cisco":
+            header = re.fullmatch(
+                r"\s*\d+(?:\.\d+){3}/(\d{1,2}) is (variably )?subnetted,.*", line,
+            )
+            if header is not None:
+                inherited_length = header.group(1) if header.group(2) is None else None
+                continue
+            if re.match(r"\s*(?:Routing Table:|Route Distinguisher:)", line):
+                inherited_length = None
         match = re.match(
             r"^\s*(?:(?:[A-Z*+?>&%=-]+|[A-Z]{1,2}[12])\s*){0,3}"
             r"(\d+(?:\.\d+){3}/\d{1,2})\s+(.+)$",
             line, re.I,
         )
-        if match is None or re.match(r"is (?:variably )?subnetted\b", match.group(2)):
+        if match is not None:
+            if re.match(r"is (?:variably )?subnetted\b", match.group(2)):
+                continue
+            route_prefix = match.group(1)
+        elif vendor == "cisco" and inherited_length is not None:
+            inherited_route = re.match(
+                r"^\s*(?:[A-Z*+?>&%=-]+|[A-Z]{1,2}[12])\s+"
+                r"(\d+(?:\.\d+){3})\s+\[\d+/\d+\]\s+via\s+", line, re.I,
+            )
+            if inherited_route is None:
+                continue
+            route_prefix = f"{inherited_route.group(1)}/{inherited_length}"
+        else:
             continue
         try:
-            route = IPv4Network(match.group(1), strict=False)
+            route = IPv4Network(route_prefix, strict=False)
         except ValueError:
             continue
         if route == expected:
@@ -191,9 +213,9 @@ class PostValidationTriageService:
             provision = build_ephemeral_svi_provision_commands(
                 access_node.vendor, intent.vlan_id, expected.svi_ip_address, expected.svi_netmask,
             )
-            self._transport.push_configuration(access_node, provision)
             ping_command = f"ping {expected.ping_target_ip}"
             try:
+                self._transport.push_configuration(access_node, provision)
                 ping_success = parse_ping_success(
                     self._transport.execute_show(access_node, ping_command), access_node.vendor,
                 )

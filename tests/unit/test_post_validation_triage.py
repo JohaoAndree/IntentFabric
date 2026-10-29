@@ -32,6 +32,7 @@ https://info.support.huawei.com/network/ptmngsys/Web/tsrev_ar/en/content/ar/23_e
 
 from collections.abc import Sequence
 from dataclasses import replace
+from ipaddress import IPv4Network
 from pathlib import Path
 import json
 import re
@@ -523,3 +524,101 @@ def test_huawei_evpn_down_circuit_fails_control_plane_without_probe(variant: str
     assert not report.observed_state.control_plane_up
     assert report.observed_state.svi_ping_success is None
     assert all(record.mode == "show" for record in transport.history)
+
+
+@pytest.mark.parametrize("vendor", ["cisco", "huawei"])
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_partial_svi_provision_always_attempts_cleanup(vendor: str, cleanup_fails: bool) -> None:
+    """Retira una SVI parcialmente creada y prioriza un fallo posterior de limpieza."""
+    intent = _intent("dia", vendor)
+    transport = _transport(intent)
+    original_push = transport.push_configuration
+    provision_error = DeviceTransportError("provision parcial", node_id=intent.access.node_id)
+    cleanup_error = DeviceTransportError("limpieza interrumpida", node_id=intent.access.node_id)
+    teardown = build_ephemeral_svi_teardown_commands(intent.access.vendor, intent.vlan_id)
+    attempted: list[tuple[str, ...]] = []
+
+    def failing_push(node: TopologyNode, commands: Sequence[str]) -> tuple[str, bool]:
+        attempted.append(tuple(commands))
+        if tuple(commands) == teardown:
+            if cleanup_fails:
+                raise cleanup_error
+            return original_push(node, commands)
+        original_push(node, commands)
+        raise provision_error
+
+    transport.push_configuration = failing_push
+    error_type = EphemeralProbeCleanupError if cleanup_fails else DeviceTransportError
+    with pytest.raises(error_type) as captured:
+        build_post_validator(transport=transport).validate(intent)
+    assert len(attempted) == 2 and attempted[-1] == teardown
+    if cleanup_fails:
+        assert captured.value.__cause__ is cleanup_error
+        assert cleanup_error.__context__ is provision_error
+        assert (captured.value.node_id, captured.value.vlan_id) == (intent.access.node_id, intent.vlan_id)
+    else:
+        assert captured.value is provision_error
+        assert transport.history[-1].commands == teardown
+    assert not any(record.commands[0].startswith("ping ") for record in transport.history)
+
+
+@pytest.mark.parametrize("prefix,header,rows,vendor,present", [
+    ("10.14.14.14/32", "10.14.0.0/32 is subnetted, 1 subnets", True, "cisco", True),
+    ("10.14.14.14/31", "10.14.0.0/32 is subnetted, 1 subnets", True, "cisco", False),
+    ("10.14.14.15/32", "10.14.0.0/32 is subnetted, 1 subnets", True, "cisco", False),
+    ("10.14.14.14/32", "10.14.0.0/32 is variably subnetted, 1 subnets, 1 masks", True, "cisco", False),
+    ("10.14.14.14/32", "10.14.0.0/32 is subnetted, 1 subnets", False, "cisco", False),
+    ("10.14.0.0/32", "10.14.0.0/32 is subnetted, 1 subnets", False, "cisco", False),
+    ("10.14.14.14/32", "", True, "cisco", False),
+    ("10.14.14.14/32", "10.14.0.0/32 is subnetted, 1 subnets", True, "huawei", False),
+])
+def test_cisco_route_inherits_only_uniform_subnet_header(
+    prefix: str, header: str, rows: bool, vendor: str, present: bool,
+) -> None:
+    """Reconoce la mascara heredada solo en filas Cisco con encabezado uniforme.
+
+    Formato de show ip route vrf documentado en Cisco IOS XE 17.x:
+    https://www.cisco.com/c/en/us/td/docs/routers/sdwan/command/iosxe/qualified-cli-command-reference-guide/m-troubleshooting-commands.html
+    """
+    output = header + "\n"
+    if rows:
+        output += "R 10.14.14.14 [120/1] via 10.20.25.18, 00:00:18, GigabitEthernet5\n"
+    assert parse_vrf_route_present(output, vendor, prefix) is present
+
+
+@pytest.mark.parametrize("separator", [
+    "10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks",
+    "Routing Table: OTHER",
+    "Route Distinguisher: 64512:2",
+])
+def test_cisco_route_header_scope_resets(separator: str) -> None:
+    """No hereda una mascara uniforme tras cambiar el contexto de rutas."""
+    output = ("10.14.0.0/32 is subnetted, 1 subnets\n" + separator
+              + "\nR 10.14.14.14 [120/1] via 10.20.25.18, 00:00:18, GigabitEthernet5\n")
+    assert not parse_vrf_route_present(output, "cisco", "10.14.14.14/32")
+
+
+def test_cisco_variable_subnets_require_explicit_route_mask() -> None:
+    """Acepta la mascara explicita sin tratar encabezados ni ecos como rutas."""
+    header = "10.0.0.0/8 is variably subnetted, 2 subnets, 2 masks\n"
+    row = "R 10.14.14.14/32 [120/1] via 10.20.25.18, 00:00:18, GigabitEthernet5\n"
+    assert parse_vrf_route_present(header + row, "cisco", "10.14.14.14/32")
+    assert not parse_vrf_route_present(header + row, "cisco", "10.14.14.14/31")
+    uniform_header = "10.14.0.0/32 is subnetted, 1 subnets\n"
+    echo = "PE-LAB# show ip route vrf LAB 10.14.14.14\n"
+    assert not parse_vrf_route_present(uniform_header + echo, "cisco", "10.14.14.14/32")
+
+
+def test_dia_accepts_cisco_route_with_inherited_mask() -> None:
+    """Declara DIA operativo cuando su ruta instalada hereda la mascara del encabezado."""
+    intent = replace(_intent("dia", "cisco"), lan_network=IPv4Network("10.14.14.14/32"))
+    transport = _transport(intent)
+    transport.set_show_output(
+        intent.provider_edge.node_id, f"show ip route vrf {intent.vrf_name}",
+        "10.14.0.0/32 is subnetted, 1 subnets\n"
+        "R 10.14.14.14 [120/1] via 10.20.25.18, 00:00:18, GigabitEthernet5\n",
+    )
+    report = build_post_validator(transport=transport).validate_and_require(intent)
+    assert report.status == ServiceOperationalStatus.OPERATIONAL and report.sdc == 1
+    assert report.observed_state.control_plane_up and report.observed_state.svi_cleaned_up
+    assert all(step.passed for step in report.steps)
