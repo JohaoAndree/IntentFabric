@@ -2,6 +2,11 @@
 
 from intentfabric.adapters.jinja_renderer import JinjaTemplateRenderer
 from intentfabric.adapters.yaml_topology_repository import YamlTopologyRepository
+from intentfabric.adapters.netmiko_transport import NetmikoTransportAdapter, load_credentials_from_env
+from intentfabric.adapters.simulated_transport import SimulatedTransportAdapter
 
 
-__all__ = ("JinjaTemplateRenderer", "YamlTopologyRepository")
+__all__ = (
+    "JinjaTemplateRenderer", "YamlTopologyRepository", "NetmikoTransportAdapter",
+    "SimulatedTransportAdapter", "load_credentials_from_env",
+)
