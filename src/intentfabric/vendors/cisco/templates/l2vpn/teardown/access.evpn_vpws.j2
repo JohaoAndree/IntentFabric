@@ -1,0 +1,10 @@
+interface {{ client_interface }}
+ no description
+ no switchport access vlan
+ no switchport mode
+ shutdown
+exit
+interface {{ uplink_interface }}
+ switchport trunk allowed vlan remove {{ vlan_id }}
+exit
+no vlan {{ vlan_id }}

@@ -102,9 +102,13 @@ def test_contract_detects_synthetic_resource_mismatches(tmp_path: Path, fault: s
 
 
 @pytest.mark.parametrize("package", VENDOR_PACKAGES)
-def test_vendors_declare_complete_dia_and_l3vpn_matrix(package: ModuleType) -> None:
-    """Declara las doce combinaciones DIA/L3VPN sin perder ninguna capacidad previa."""
+def test_vendors_declare_complete_service_and_variant_matrix(package: ModuleType) -> None:
+    """Declara DIA y L3VPN mas las dieciocho combinaciones L2VPN por fabricante."""
     assert set(package.VENDOR_DEFINITION.templates) == {
         TemplateKey(service_type, operation, role)
         for service_type in ("DIA", "L3VPN") for operation in Operation for role in NodeRole
+    } | {
+        TemplateKey("L2VPN", operation, role, variant)
+        for operation in Operation for role in NodeRole
+        for variant in ("default", "evpn_vpws", "martini_ldp")
     }

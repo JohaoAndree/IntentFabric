@@ -7,8 +7,8 @@ import pytest
 
 from intentfabric.domain.errors import IntentParseError
 from intentfabric.domain.intent import (
-    AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, ServiceIntent, TransitHop,
-    is_valid_asn, is_valid_route_distinguisher_or_target,
+    AccessHop, DiaIntent, L2VpnIntent, L3VpnIntent, ProviderEdgeHop, ServiceIntent, TransitHop,
+    is_valid_asn, is_valid_evi_id, is_valid_pseudowire_id, is_valid_route_distinguisher_or_target,
 )
 from intentfabric.domain.template_key import NodeRole
 
@@ -150,3 +150,52 @@ def test_rd_rt_accepts_all_three_encodings(value: str) -> None:
 def test_rd_rt_rejects_ambiguous_and_out_of_range_values(value: object) -> None:
     """Rechaza formatos ambiguos, whitespace, digitos no ASCII y desbordamientos."""
     assert not is_valid_route_distinguisher_or_target(value)
+
+
+def test_l2vpn_preserves_frozen_path_and_allows_semantic_defects() -> None:
+    """Conserva ruta y alias inmutables permitiendo defectos semanticos."""
+    dia = _intent()
+    intent = L2VpnIntent(
+        description=dia.description, vlan_id=0, bandwidth_mbps=2000,
+        qos_policy_name=dia.qos_policy_name, pw_id=0, evi_id=310,
+        local_ac_id=0, remote_ac_id=0, rd="invalid", rt_import="invalid",
+        rt_export="invalid", remote_pe_node_id="REMOTE-PE",
+        remote_pe_ip=IPv4Address("192.0.2.22"), access=dia.access,
+        transits=dia.transits, provider_edge=dia.provider_edge,
+    )
+    assert isinstance(intent, ServiceIntent)
+    assert intent.service_type == L2VpnIntent.service_type == "L2VPN"
+    assert intent.hops == dia.hops
+    assert intent.qos_policy == dia.qos_policy_name
+    assert intent.instance_name == "VPWS_310"
+    assert replace(intent, evi_id=410).instance_name == "VPWS_410"
+    assert {"service_type", "hops", "qos_policy", "instance_name"}.isdisjoint(
+        field.name for field in fields(intent)
+    )
+    for attribute in ("pw_id", "hops", "qos_policy", "instance_name"):
+        with pytest.raises(FrozenInstanceError):
+            setattr(intent, attribute, "changed")
+
+
+@pytest.mark.parametrize("value", (1, 65535, 65536, 4294967295))
+def test_pseudowire_id_accepts_unsigned_32_bit_range(value: int) -> None:
+    """Acepta los limites de VC-ID y AC-ID sin reservar el maximo."""
+    assert is_valid_pseudowire_id(value)
+
+
+@pytest.mark.parametrize("value", (0, -1, 4294967296, True, False, 1.0, "1", None))
+def test_pseudowire_id_rejects_zero_overflow_and_nonintegers(value: object) -> None:
+    """Rechaza cero, desbordamiento y tipos distintos del entero estricto."""
+    assert not is_valid_pseudowire_id(value)
+
+
+@pytest.mark.parametrize("value", (1, 65535))
+def test_evi_id_accepts_unsigned_16_bit_range(value: int) -> None:
+    """Acepta ambos limites del identificador EVI."""
+    assert is_valid_evi_id(value)
+
+
+@pytest.mark.parametrize("value", (0, -1, 65536, True, False, 1.0, "1", None))
+def test_evi_id_rejects_zero_overflow_and_nonintegers(value: object) -> None:
+    """Rechaza valores y tipos fuera del rango EVI estricto."""
+    assert not is_valid_evi_id(value)

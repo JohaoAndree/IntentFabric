@@ -22,10 +22,11 @@ from intentfabric.domain.errors import (
     IntentParseError, PluginConsistencyError, PluginRegistrationError,
     TemplateNotFoundError, UnsupportedCombinationError,
 )
-from intentfabric.domain.intent import AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, TransitHop
+from intentfabric.domain.intent import AccessHop, DiaIntent, L2VpnIntent, L3VpnIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.domain.topology import TopologyCatalog, TopologyLink
+from intentfabric.services.l2vpn import L2VpnIntentParser, validate_l2vpn_semantics
 from intentfabric.services.l3vpn import L3VpnIntentParser, validate_l3vpn_semantics
 from intentfabric.services.dia import validate_dia_intent_semantics
 from intentfabric.services.dia.intent_parser import DiaIntentParser
@@ -904,3 +905,112 @@ def test_l3vpn_reserved_vlan_reports_every_cisco_hop_and_management_overlap_once
     assert [(issue.node_id, issue.field_path) for issue in report.errors if issue.code == "MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK"] == [("LAB-ACCESS", "hops[0].management_ip")]
     invalid_asns = replace(intent, pe_asn=0, ce_asn=0)
     assert "SAME_PE_CE_ASN" not in {issue.code for issue in validate_l3vpn_semantics(invalid_asns)}
+
+
+def _l2vpn_intent() -> L2VpnIntent:
+    dia = _dia_intent()
+    return L2VpnIntent(
+        description="LAB-L2VPN-001", vlan_id=310, bandwidth_mbps=100,
+        qos_policy_name="QOS_L2VPN_100M", pw_id=310, evi_id=310,
+        local_ac_id=3101, remote_ac_id=3102, rd="65000:310",
+        rt_import="65000:310", rt_export="65000:310",
+        remote_pe_node_id="REMOTE-PE", remote_pe_ip=IPv4Address("192.0.2.22"),
+        access=dia.access, transits=dia.transits, provider_edge=dia.provider_edge,
+    )
+
+
+def _l2vpn_catalog() -> PluginCatalog:
+    catalog = PluginCatalog()
+    for vendor in ("cisco", "huawei"):
+        catalog.register_vendor(VendorDefinition(vendor, {
+            TemplateKey("L2VPN", operation, role, variant): (
+                f"templates/l2vpn/{operation.value}/{role.value}"
+                f"{'' if variant == 'default' else '.' + variant}.j2"
+            )
+            for operation in Operation for role in NodeRole
+            for variant in ("default", "evpn_vpws", "martini_ldp")
+        }))
+    catalog.register_service(L2VpnIntentParser(catalog.vendor_ids()))
+    catalog.register_service_validator("L2VPN", validate_l2vpn_semantics)
+    return catalog
+
+
+@pytest.mark.parametrize("variant", ("default", "evpn_vpws", "martini_ldp"))
+def test_l2vpn_prevalidation_accumulates_defects_and_blocks_preflight(variant: str) -> None:
+    """Acumula identificadores, capacidad y extremo remoto invalidos en cada variante."""
+    intent = _l2vpn_intent()
+    intent = replace(
+        intent, vlan_id=1, bandwidth_mbps=1001, pw_id=0, local_ac_id=True,
+        remote_ac_id=4294967296, evi_id=65536, rd="bad", rt_import="bad", rt_export="bad",
+        remote_pe_node_id=intent.provider_edge.node_id, remote_pe_ip=intent.provider_edge.management_ip,
+        access=replace(intent.access, vendor="cisco"),
+    )
+    checker = _PreFlightChecker()
+    service = PreValidationService(_l2vpn_catalog(), checker)
+    report = service.validate(intent, variant=variant)
+    assert {(issue.code, issue.field_path, issue.node_id) for issue in report.errors} == {
+        ("RESERVED_CISCO_VLAN", "vlan_id", "LAB-ACCESS"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "LAB-TRANSIT"),
+        ("BANDWIDTH_EXCEEDS_PORT_CAPACITY", "bandwidth_mbps", None),
+        ("INVALID_PW_ID_RANGE", "pw_id", None), ("INVALID_PW_ID_RANGE", "local_ac_id", None),
+        ("INVALID_PW_ID_RANGE", "remote_ac_id", None), ("INVALID_EVI_ID_RANGE", "evi_id", None),
+        ("INVALID_RD_FORMAT", "rd", None), ("INVALID_RT_FORMAT", "rt_import", None),
+        ("INVALID_RT_FORMAT", "rt_export", None),
+        ("SAME_LOCAL_REMOTE_PE", "remote_pe_node_id", "LAB-PE"),
+        ("SAME_LOCAL_REMOTE_PE", "remote_pe_ip", "LAB-PE"),
+    }
+    assert not report.is_valid and not report.preflight_executed
+    assert checker.call_count == 0
+    assert report == service.validate(intent, variant=variant)
+    assert all(issue.stage == ValidationStage.STATIC_OFFLINE for issue in report.errors)
+    with pytest.raises(PreValidationFailedError):
+        service.require_valid(report)
+
+
+@pytest.mark.parametrize(("changes", "code", "field"), (
+    ({"vlan_id": 0}, "INVALID_VLAN_RANGE", "vlan_id"),
+    ({"vlan_id": 4095}, "INVALID_VLAN_RANGE", "vlan_id"),
+    ({"pw_id": False}, "INVALID_PW_ID_RANGE", "pw_id"),
+    ({"pw_id": 4294967296}, "INVALID_PW_ID_RANGE", "pw_id"),
+    ({"local_ac_id": 0}, "INVALID_PW_ID_RANGE", "local_ac_id"),
+    ({"remote_ac_id": -1}, "INVALID_PW_ID_RANGE", "remote_ac_id"),
+    ({"evi_id": True}, "INVALID_EVI_ID_RANGE", "evi_id"),
+    ({"evi_id": 0}, "INVALID_EVI_ID_RANGE", "evi_id"),
+    ({"rd": "bad"}, "INVALID_RD_FORMAT", "rd"),
+    ({"rt_import": "bad"}, "INVALID_RT_FORMAT", "rt_import"),
+    ({"rt_export": "bad"}, "INVALID_RT_FORMAT", "rt_export"),
+    ({"bandwidth_mbps": 1001}, "BANDWIDTH_EXCEEDS_PORT_CAPACITY", "bandwidth_mbps"),
+    ({"remote_pe_node_id": "LAB-PE"}, "SAME_LOCAL_REMOTE_PE", "remote_pe_node_id"),
+    ({"remote_pe_ip": IPv4Address("192.0.2.21")}, "SAME_LOCAL_REMOTE_PE", "remote_pe_ip"),
+))
+def test_l2vpn_prevalidation_reports_each_rule_independently(
+    changes: dict[str, object], code: str, field: str,
+) -> None:
+    """Reporta cada defecto independiente por su codigo y campo exactos."""
+    report = PreValidationService(_l2vpn_catalog()).validate(replace(_l2vpn_intent(), **changes))
+    assert [(issue.code, issue.field_path) for issue in report.errors] == [(code, field)]
+
+
+@pytest.mark.parametrize("vlan_id", (1, 1002, 1003, 1004, 1005))
+def test_l2vpn_reserved_vlans_apply_only_to_each_cisco_hop(vlan_id: int) -> None:
+    """Asocia la reserva VLAN a cada Cisco y permite esos valores en Huawei."""
+    intent = _l2vpn_intent()
+    intent = replace(intent, vlan_id=vlan_id, access=replace(intent.access, vendor="cisco"))
+    issues = validate_l2vpn_semantics(intent)
+    assert [(issue.code, issue.node_id) for issue in issues] == [
+        ("RESERVED_CISCO_VLAN", "LAB-ACCESS"), ("RESERVED_CISCO_VLAN", "LAB-TRANSIT"),
+    ]
+    huawei = replace(intent, access=replace(intent.access, vendor="huawei"),
+                     transits=(replace(intent.transits[0], vendor="huawei"),))
+    assert validate_l2vpn_semantics(huawei) == ()
+
+
+@pytest.mark.parametrize("variant", ("default", "evpn_vpws", "martini_ldp"))
+def test_l2vpn_valid_boundaries_allow_preflight_for_each_variant(variant: str) -> None:
+    """Acepta capacidad e identificadores limites y ejecuta Pre-Flight en cada variante."""
+    checker = _PreFlightChecker()
+    intent = replace(_l2vpn_intent(), bandwidth_mbps=1000, vlan_id=4094,
+                     pw_id=4294967295, evi_id=65535, local_ac_id=1, remote_ac_id=4294967295)
+    report = PreValidationService(_l2vpn_catalog(), checker).validate(intent, variant=variant)
+    assert report.is_valid and report.issues == () and report.preflight_executed
+    assert checker.call_count == 1

@@ -1,0 +1,7 @@
+no l2vpn xconnect context {{ instance_name }}
+!
+no interface {{ pe_subinterface }}
+!
+no policy-map {{ qos_policy }}
+!
+no l2vpn evpn instance {{ evi_id }} point-to-point

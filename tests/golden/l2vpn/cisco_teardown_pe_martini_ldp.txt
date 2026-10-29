@@ -1,0 +1,3 @@
+no interface GigabitEthernet0/0/4.410
+!
+no policy-map QOS_L2VPN_200M

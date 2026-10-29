@@ -6,7 +6,7 @@ from pathlib import Path
 from intentfabric.adapters.intent_file_loader import load_intent_mapping
 from intentfabric.bootstrap import build_plugin_catalog
 from intentfabric.domain.derivations import derive_qos_rates, derive_wan_addresses
-from intentfabric.domain.intent import AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, TransitHop
+from intentfabric.domain.intent import AccessHop, DiaIntent, L2VpnIntent, L3VpnIntent, ProviderEdgeHop, TransitHop
 
 
 def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
@@ -67,5 +67,30 @@ def test_l3vpn_json_yaml_examples_match_the_approved_inventory_endpoint() -> Non
         "service_type", "description", "vlan_id", "wan_network", "bandwidth_mbps",
         "vrf_name", "qos_policy", "rd", "rt_import", "rt_export", "ce_asn",
         "access_node_id", "access_interface", "pe_node_id",
+    }
+    assert catalog.parse_intent(json_raw) == catalog.parse_intent(yaml_raw) == expected
+
+
+def test_l2vpn_json_yaml_examples_match_the_approved_inventory_circuit() -> None:
+    """Produce el circuito aprobado desde JSON y YAML con Loopback0 remoto derivado."""
+    directory = Path(__file__).resolve().parents[2] / "examples/intents"
+    catalog = build_plugin_catalog()
+    json_raw = load_intent_mapping(directory / "l2vpn_valid.json")
+    yaml_raw = load_intent_mapping(directory / "l2vpn_valid.yaml")
+    expected = L2VpnIntent(
+        description="L2VPN-CORP-000001", vlan_id=310, bandwidth_mbps=100,
+        qos_policy_name="QOS_L2VPN_100M", pw_id=310, evi_id=310,
+        local_ac_id=3101, remote_ac_id=3102, rd="65000:310",
+        rt_import="65000:310", rt_export="65000:310",
+        remote_pe_node_id="PE1-TEST", remote_pe_ip=IPv4Address("10.255.0.1"),
+        access=AccessHop("S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
+        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GigabitEthernet1/0/24", "GigabitEthernet1/0/25"),),
+        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0"),
+    )
+    assert json_raw == yaml_raw
+    assert set(json_raw) == {
+        "service_type", "description", "vlan_id", "bandwidth_mbps", "qos_policy",
+        "pw_id", "evi_id", "local_ac_id", "remote_ac_id", "rd", "rt_import", "rt_export",
+        "access_node_id", "access_interface", "pe_node_id", "remote_pe_node_id",
     }
     assert catalog.parse_intent(json_raw) == catalog.parse_intent(yaml_raw) == expected

@@ -1,0 +1,7 @@
+interface GigabitEthernet1/0/11
+ switchport trunk allowed vlan remove 410
+exit
+interface GigabitEthernet1/0/25
+ switchport trunk allowed vlan remove 410
+exit
+no vlan 410
