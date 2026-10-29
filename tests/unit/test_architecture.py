@@ -109,6 +109,14 @@ def test_real_tree_has_no_violations() -> None:
     assert collect_violations(src_root) == []
 
 
+@pytest.mark.parametrize("module_name", ("interfaces.py", "topology.py"))
+def test_topology_domain_modules_preserve_stdlib_boundary(tmp_path: Path, module_name: str) -> None:
+    """Incluye los nuevos modulos en la verificacion AST sin excepciones de capa."""
+    _write_module(tmp_path, f"intentfabric/domain/{module_name}", "import yaml\n")
+    assert any("terceros solo permitidos en adapters (yaml)" in issue
+               for issue in collect_violations(tmp_path))
+
+
 @pytest.mark.parametrize(
     "module_name", ["domain", "application", "services", "vendors", "adapters", "utils"]
 )
