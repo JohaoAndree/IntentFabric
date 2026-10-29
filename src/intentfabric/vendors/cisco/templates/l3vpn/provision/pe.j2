@@ -1,0 +1,29 @@
+vrf definition {{ vrf_name }}
+ description {{ description }}
+ rd {{ rd }}
+ !
+ address-family ipv4
+  route-target export {{ rt_export }}
+  route-target import {{ rt_import }}
+ exit-address-family
+!
+policy-map {{ qos_policy }}
+ class class-default
+  police rate {{ cir_bps }} bps peak-rate {{ pir_bps }} bps
+!
+interface {{ pe_subinterface }}
+ description {{ description }}
+ encapsulation dot1Q {{ vlan_id }}
+ vrf forwarding {{ vrf_name }}
+ ip address {{ wan_pe_ip }} {{ wan_netmask }}
+ service-policy input {{ qos_policy }}
+ service-policy output {{ qos_policy }}
+ no shutdown
+!
+router bgp {{ pe_asn }}
+ address-family ipv4 vrf {{ vrf_name }}
+  redistribute connected
+  neighbor {{ wan_ce_ip }} remote-as {{ ce_asn }}
+  neighbor {{ wan_ce_ip }} description {{ description }}
+  neighbor {{ wan_ce_ip }} activate
+ exit-address-family

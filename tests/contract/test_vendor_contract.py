@@ -99,3 +99,12 @@ def test_contract_detects_synthetic_resource_mismatches(tmp_path: Path, fault: s
     source = PackagedTemplateSource({"acme": tmp_path})
     with pytest.raises((AssertionError, TemplateNotFoundError)):
         _assert_vendor_contract(definition, catalog, source, tmp_path)
+
+
+@pytest.mark.parametrize("package", VENDOR_PACKAGES)
+def test_vendors_declare_complete_dia_and_l3vpn_matrix(package: ModuleType) -> None:
+    """Declara las doce combinaciones DIA/L3VPN sin perder ninguna capacidad previa."""
+    assert set(package.VENDOR_DEFINITION.templates) == {
+        TemplateKey(service_type, operation, role)
+        for service_type in ("DIA", "L3VPN") for operation in Operation for role in NodeRole
+    }

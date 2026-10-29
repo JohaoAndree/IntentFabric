@@ -7,7 +7,8 @@ import pytest
 
 from intentfabric.domain.errors import IntentParseError
 from intentfabric.domain.intent import (
-    AccessHop, DiaIntent, ProviderEdgeHop, ServiceIntent, TransitHop,
+    AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, ServiceIntent, TransitHop,
+    is_valid_asn, is_valid_route_distinguisher_or_target,
 )
 from intentfabric.domain.template_key import NodeRole
 
@@ -94,3 +95,58 @@ def test_hops_normalize_all_interface_fields_and_wrap_invalid_names() -> None:
             with pytest.raises(ValueError, match="interface") as error:
                 replace(hop, **{attribute: "invalid"})
             assert error.value.__cause__ is not None
+
+
+def test_l3vpn_preserves_frozen_path_and_allows_semantic_defects() -> None:
+    """Conserva contratos DIA y permite defectos para validacion acumulativa."""
+    dia = _intent()
+    intent = L3VpnIntent(
+        description=dia.description, vlan_id=0, vrf_name=dia.vrf_name,
+        wan_network=dia.wan_network, bandwidth_mbps=dia.bandwidth_mbps,
+        qos_policy_name=dia.qos_policy_name, rd="invalid", rt_import="invalid",
+        rt_export="invalid", pe_asn=65000, ce_asn=65000,
+        access=dia.access, transits=dia.transits, provider_edge=dia.provider_edge,
+    )
+    assert isinstance(intent, ServiceIntent)
+    assert intent.service_type == L3VpnIntent.service_type == "L3VPN"
+    assert intent.hops == dia.hops
+    assert intent.qos_policy == dia.qos_policy_name
+    assert intent.lan_network is None
+    assert {"service_type", "hops", "qos_policy"}.isdisjoint(field.name for field in fields(intent))
+    with pytest.raises(FrozenInstanceError):
+        intent.rd = "65000:1"
+    with pytest.raises(FrozenInstanceError):
+        intent.hops = ()
+    assert replace(intent, lan_network=dia.lan_network).lan_network == dia.lan_network
+
+
+@pytest.mark.parametrize("value", (1, 65535, 65536, 4294967294))
+def test_asn_accepts_complete_supported_range(value: int) -> None:
+    """Acepta los limites y la transicion entre ASN de dos y cuatro octetos."""
+    assert is_valid_asn(value)
+
+
+@pytest.mark.parametrize("value", (0, -1, 4294967295, True, False, 65000.0, "65000", None))
+def test_asn_rejects_reserved_values_and_nonintegers(value: object) -> None:
+    """Rechaza valores reservados, booleanos y tipos no enteros."""
+    assert not is_valid_asn(value)
+
+
+@pytest.mark.parametrize("value", (
+    "1:0", "65535:4294967295", "65536:65535", "4294967295:0",
+    "192.0.2.1:65535", "0.0.0.0:0", "255.255.255.255:0",
+))
+def test_rd_rt_accepts_all_three_encodings(value: str) -> None:
+    """Acepta los limites de los tres formatos admin:assigned."""
+    assert is_valid_route_distinguisher_or_target(value)
+
+
+@pytest.mark.parametrize("value", (
+    "0:1", "65535:4294967296", "65536:65536", "4294967296:0",
+    "192.0.2.1:65536", "256.0.0.1:0", "192.000.2.1:0", "01:1", "1:01",
+    "1:-1", "+1:1", "1:+1", "1:1:1", "1", "", " 1:1", "1:1 ",
+    "1:1\n", "1: 1", "1\t:1", "１:1", "1:١", None, 65000, "1:" + "9" * 5000,
+))
+def test_rd_rt_rejects_ambiguous_and_out_of_range_values(value: object) -> None:
+    """Rechaza formatos ambiguos, whitespace, digitos no ASCII y desbordamientos."""
+    assert not is_valid_route_distinguisher_or_target(value)

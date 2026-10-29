@@ -4,8 +4,8 @@ from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 
 VENDOR_DEFINITION = VendorDefinition(vendor_id="huawei", templates={
-    TemplateKey("DIA", operation, role): f"templates/dia/{operation.value}/{role.value}.j2"
-    for operation in Operation for role in NodeRole
+    TemplateKey(service_type, operation, role): f"templates/{service_type.lower()}/{operation.value}/{role.value}.j2"
+    for service_type in ("DIA", "L3VPN") for operation in Operation for role in NodeRole
 })
 
 

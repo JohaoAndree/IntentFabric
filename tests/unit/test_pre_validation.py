@@ -22,10 +22,11 @@ from intentfabric.domain.errors import (
     IntentParseError, PluginConsistencyError, PluginRegistrationError,
     TemplateNotFoundError, UnsupportedCombinationError,
 )
-from intentfabric.domain.intent import AccessHop, DiaIntent, ProviderEdgeHop, TransitHop
+from intentfabric.domain.intent import AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, TransitHop
 from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 from intentfabric.domain.vendor_definition import VendorDefinition
 from intentfabric.domain.topology import TopologyCatalog, TopologyLink
+from intentfabric.services.l3vpn import L3VpnIntentParser, validate_l3vpn_semantics
 from intentfabric.services.dia import validate_dia_intent_semantics
 from intentfabric.services.dia.intent_parser import DiaIntentParser
 
@@ -812,3 +813,94 @@ def test_dia_semantic_report_serializes_logical_node_identity_in_stable_order() 
         reordered = ValidationReport(report.service_id, report.service_type, issue_order)
         assert reordered == report
         assert json.dumps(reordered.to_dict(), ensure_ascii=False) == serialized
+
+
+def _l3vpn_intent() -> L3VpnIntent:
+    dia = _dia_intent()
+    return L3VpnIntent(
+        description="LAB-L3VPN-001", vlan_id=110, vrf_name="VRF_CORP_A",
+        wan_network=dia.wan_network, bandwidth_mbps=100, qos_policy_name="QOS_L3VPN_100M",
+        rd="65000:110", rt_import="65000:110", rt_export="65000:110", pe_asn=65000, ce_asn=65110,
+        access=dia.access, transits=dia.transits, provider_edge=dia.provider_edge,
+    )
+
+
+def _l3vpn_catalog() -> PluginCatalog:
+    catalog = PluginCatalog()
+    for vendor in ("cisco", "huawei"):
+        catalog.register_vendor(VendorDefinition(vendor, {
+            TemplateKey("L3VPN", operation, role): f"templates/l3vpn/{operation.value}/{role.value}.j2"
+            for operation in Operation for role in NodeRole
+        }))
+    catalog.register_service(L3VpnIntentParser(catalog.vendor_ids()))
+    catalog.register_service_validator("L3VPN", validate_l3vpn_semantics)
+    return catalog
+
+
+def test_l3vpn_prevalidation_accumulates_independent_defects_and_skips_preflight() -> None:
+    """Acumula defectos L3VPN con campo y nodo sin ejecutar Pre-Flight online."""
+    intent = replace(
+        _l3vpn_intent(), vlan_id=1, bandwidth_mbps=1001, rd="bad", rt_import="01:1",
+        rt_export="bad", pe_asn=0, ce_asn=4294967295,
+        wan_network=IPv4Network("192.0.2.8/30"), lan_network=IPv4Network("192.0.2.0/24"),
+    )
+    checker = _PreFlightChecker()
+    validator = PreValidationService(_l3vpn_catalog(), checker)
+    report = validator.validate(intent)
+    assert not report.is_valid and not report.preflight_executed
+    assert checker.call_count == 0
+    assert {(issue.code, issue.field_path, issue.node_id) for issue in report.errors} == {
+        ("RESERVED_CISCO_VLAN", "vlan_id", "LAB-TRANSIT"),
+        ("WAN_LAN_OVERLAP", "lan_network", None),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[0].management_ip", "LAB-ACCESS"),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[1].management_ip", "LAB-TRANSIT"),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[2].management_ip", "LAB-PE"),
+        ("BANDWIDTH_EXCEEDS_PORT_CAPACITY", "bandwidth_mbps", None),
+        ("INVALID_RD_FORMAT", "rd", None), ("INVALID_RT_FORMAT", "rt_import", None),
+        ("INVALID_RT_FORMAT", "rt_export", None), ("INVALID_ASN_RANGE", "pe_asn", None),
+        ("INVALID_ASN_RANGE", "ce_asn", None),
+    }
+    assert report == validator.validate(intent)
+    assert all(issue.stage == ValidationStage.STATIC_OFFLINE for issue in report.errors)
+    with pytest.raises(PreValidationFailedError):
+        validator.require_valid(report)
+
+
+@pytest.mark.parametrize(("changes", "code", "field"), (
+    ({"vlan_id": 0}, "INVALID_VLAN_RANGE", "vlan_id"),
+    ({"vlan_id": 4095}, "INVALID_VLAN_RANGE", "vlan_id"),
+    ({"wan_network": IPv4Network("198.51.100.0/29")}, "INVALID_WAN_PREFIX_LENGTH", "wan_network"),
+    ({"lan_network": IPv4Network("10.0.0.0/7")}, "INVALID_LAN_PREFIX_LENGTH", "lan_network"),
+    ({"lan_network": IPv4Network("10.0.0.0/31")}, "INVALID_LAN_PREFIX_LENGTH", "lan_network"),
+    ({"pe_asn": 65110}, "SAME_PE_CE_ASN", "ce_asn"),
+    ({"pe_asn": True}, "INVALID_ASN_RANGE", "pe_asn"),
+    ({"ce_asn": False}, "INVALID_ASN_RANGE", "ce_asn"),
+))
+def test_l3vpn_prevalidation_reports_exact_individual_rule(
+    changes: dict[str, object], code: str, field: str,
+) -> None:
+    """Expone cada regla restante por su codigo y campo exactos."""
+    report = PreValidationService(_l3vpn_catalog()).validate(replace(_l3vpn_intent(), **changes))
+    assert [(issue.code, issue.field_path) for issue in report.errors] == [(code, field)]
+
+
+@pytest.mark.parametrize("lan", (None, IPv4Network("10.0.0.0/8"), IPv4Network("10.0.0.0/30")))
+def test_l3vpn_prevalidation_accepts_valid_optional_lan(lan: IPv4Network | None) -> None:
+    """Permite L3VPN valida sin LAN y con ambos limites validos de prefijo LAN."""
+    intent = replace(_l3vpn_intent(), lan_network=lan, bandwidth_mbps=1000)
+    report = PreValidationService(_l3vpn_catalog()).validate(intent)
+    assert report.is_valid and report.issues == ()
+
+
+def test_l3vpn_reserved_vlan_reports_every_cisco_hop_and_management_overlap_once() -> None:
+    """Asocia VLAN reservada a cada Cisco y reporta una vez la gestion WAN/LAN solapada."""
+    intent = _l3vpn_intent()
+    intent = replace(
+        intent, vlan_id=1002, access=replace(intent.access, vendor="cisco"),
+        wan_network=IPv4Network("192.0.2.8/30"), lan_network=IPv4Network("192.0.2.8/30"),
+    )
+    report = PreValidationService(_l3vpn_catalog()).validate(intent)
+    assert {issue.node_id for issue in report.errors if issue.code == "RESERVED_CISCO_VLAN"} == {"LAB-ACCESS", "LAB-TRANSIT"}
+    assert [(issue.node_id, issue.field_path) for issue in report.errors if issue.code == "MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK"] == [("LAB-ACCESS", "hops[0].management_ip")]
+    invalid_asns = replace(intent, pe_asn=0, ce_asn=0)
+    assert "SAME_PE_CE_ASN" not in {issue.code for issue in validate_l3vpn_semantics(invalid_asns)}

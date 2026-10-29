@@ -1,0 +1,10 @@
+bgp {{ pe_asn }}
+ undo ipv4-family vpn-instance {{ vrf_name }}
+#
+undo interface {{ pe_subinterface }}
+#
+undo traffic policy {{ qos_policy }}
+undo traffic behavior {{ qos_policy }}_BEHAVIOR
+undo traffic classifier {{ qos_policy }}_CLASS
+#
+undo ip vpn-instance {{ vrf_name }}

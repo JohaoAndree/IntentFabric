@@ -1,6 +1,9 @@
 """Modelos puros e inmutables del dominio, sin efectos externos."""
 
-from intentfabric.domain.derivations import BandwidthRates, derive_bandwidth_rates
+from intentfabric.domain.derivations import (
+    BandwidthRates, QosRates, WanAddresses, derive_bandwidth_rates, derive_qos_rates,
+    derive_subinterface_name, derive_wan_addresses,
+)
 from intentfabric.domain.errors import IntentFabricError, PreValidationFailedError, TemplateRenderError
 from intentfabric.domain.errors import (
     InvalidInterfaceNameError, TopologyPathResolutionError, TopologyValidationError,
@@ -17,8 +20,15 @@ from intentfabric.domain.validation import (
 )
 from intentfabric.domain.topology import OsFamily, TopologyCatalog, TopologyLink, TopologyNode
 
+from intentfabric.domain.intent import (
+    AccessHop, DiaIntent, L3VpnIntent, ProviderEdgeHop, ServiceHop, ServiceIntent,
+    TransitHop, is_valid_asn, is_valid_route_distinguisher_or_target,
+)
 
 __all__ = (
+    "AccessHop", "DiaIntent", "L3VpnIntent", "ProviderEdgeHop", "ServiceHop", "ServiceIntent",
+    "TransitHop", "is_valid_asn", "is_valid_route_distinguisher_or_target", "QosRates",
+    "WanAddresses", "derive_qos_rates", "derive_subinterface_name", "derive_wan_addresses",
     "OsFamily", "TopologyCatalog", "TopologyLink", "TopologyNode",
     "InvalidInterfaceNameError", "TopologyPathResolutionError", "TopologyValidationError",
     "abbreviate_interface_name", "are_equivalent_interfaces", "normalize_interface_name",

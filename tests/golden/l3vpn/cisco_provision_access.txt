@@ -1,0 +1,12 @@
+vlan 110
+ name L3VPN-CORP-000001
+exit
+interface GigabitEthernet1/0/1
+ description L3VPN-CORP-000001
+ switchport mode access
+ switchport access vlan 110
+ no shutdown
+exit
+interface GigabitEthernet1/0/10
+ switchport trunk allowed vlan add 110
+exit

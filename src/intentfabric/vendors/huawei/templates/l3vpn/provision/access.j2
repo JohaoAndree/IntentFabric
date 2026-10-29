@@ -1,0 +1,12 @@
+vlan {{ vlan_id }}
+ description {{ description }}
+quit
+interface {{ client_interface }}
+ description {{ description }}
+ port link-type access
+ port default vlan {{ vlan_id }}
+ undo shutdown
+quit
+interface {{ uplink_interface }}
+ port trunk allow-pass vlan {{ vlan_id }}
+quit

@@ -1,0 +1,14 @@
+service_type: "L3VPN"
+description: "L3VPN-CORP-000001"
+vlan_id: 110
+wan_network: "172.16.10.0/30"
+bandwidth_mbps: 100
+vrf_name: "VRF_CORP_A"
+qos_policy: "QOS_L3VPN_100M"
+rd: "65000:110"
+rt_import: "65000:110"
+rt_export: "65000:110"
+ce_asn: 65110
+access_node_id: "S3-9306-TEST"
+access_interface: "GigabitEthernet1/0/1"
+pe_node_id: "PE2-TEST"

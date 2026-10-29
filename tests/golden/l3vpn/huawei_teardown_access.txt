@@ -1,0 +1,10 @@
+interface GigabitEthernet0/0/1
+ undo description
+ undo port default vlan
+ undo port link-type
+ shutdown
+quit
+interface GigabitEthernet0/0/8
+ undo port trunk allow-pass vlan 210
+quit
+undo vlan 210

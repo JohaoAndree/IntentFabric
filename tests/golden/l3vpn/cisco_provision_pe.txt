@@ -1,0 +1,29 @@
+vrf definition VRF_CORP_A
+ description L3VPN-CORP-000002
+ rd 65000:210
+ !
+ address-family ipv4
+  route-target export 65000:110
+  route-target import 65000:110
+ exit-address-family
+!
+policy-map QOS_L3VPN_200M
+ class class-default
+  police rate 200000000 bps peak-rate 200000000 bps
+!
+interface GigabitEthernet0/0/4.210
+ description L3VPN-CORP-000002
+ encapsulation dot1Q 210
+ vrf forwarding VRF_CORP_A
+ ip address 172.16.20.1 255.255.255.252
+ service-policy input QOS_L3VPN_200M
+ service-policy output QOS_L3VPN_200M
+ no shutdown
+!
+router bgp 65000
+ address-family ipv4 vrf VRF_CORP_A
+  redistribute connected
+  neighbor 172.16.20.2 remote-as 65210
+  neighbor 172.16.20.2 description L3VPN-CORP-000002
+  neighbor 172.16.20.2 activate
+ exit-address-family
