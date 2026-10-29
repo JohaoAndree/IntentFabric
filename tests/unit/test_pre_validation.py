@@ -240,8 +240,8 @@ def test_dia_reports_each_cisco_hop_using_a_reserved_vlan(vlan_id: int) -> None:
     intent = replace(intent, vlan_id=vlan_id, access=replace(intent.access, vendor="cisco"))
     issues = validate_dia_intent_semantics(intent)
     assert [(issue.code, issue.field_path, issue.node_id) for issue in issues] == [
-        ("RESERVED_CISCO_VLAN", "vlan_id", "192.0.2.11"),
-        ("RESERVED_CISCO_VLAN", "vlan_id", "192.0.2.12"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", intent.access.node_id),
+        ("RESERVED_CISCO_VLAN", "vlan_id", intent.transits[0].node_id),
     ]
 
 
@@ -269,7 +269,7 @@ def test_dia_reports_management_overlap_in_wan_and_lan(address: str) -> None:
     assert len(issues) == 1
     assert issues[0].code == "MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK"
     assert issues[0].field_path == "hops[2].management_ip"
-    assert issues[0].node_id == address
+    assert issues[0].node_id == intent.provider_edge.node_id
 
 
 @pytest.mark.parametrize("bandwidth_mbps, expected_count", [(1000, 0), (1001, 1)])
@@ -780,3 +780,35 @@ def test_client_trunk_error_preserves_other_static_diagnostics() -> None:
     assert not report.is_valid
     assert not report.preflight_executed
     assert checker.call_count == 0
+
+
+def test_dia_semantic_report_serializes_logical_node_identity_in_stable_order() -> None:
+    """Conserva identidad logica, taxonomia y orden canonico de ambos errores semanticos en JSON."""
+    intent = _dia_intent()
+    intent = replace(
+        intent, vlan_id=1002,
+        access=replace(intent.access, node_id="Z-ACCESS", vendor="cisco", management_ip=IPv4Address("198.51.100.1")),
+        transits=(replace(intent.transits[0], node_id="A-TRANSIT", management_ip=IPv4Address("203.0.113.1")),),
+        provider_edge=replace(intent.provider_edge, node_id="M-PE", vendor="cisco", management_ip=IPv4Address("198.51.100.2")),
+    )
+    assert all(hop.node_id != str(hop.management_ip) for hop in intent.hops)
+    report = PreValidationService(build_plugin_catalog()).validate(intent)
+    expected = [
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[1].management_ip", "A-TRANSIT"),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[2].management_ip", "M-PE"),
+        ("MANAGEMENT_IP_OVERLAPS_SERVICE_NETWORK", "hops[0].management_ip", "Z-ACCESS"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "A-TRANSIT"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "M-PE"),
+        ("RESERVED_CISCO_VLAN", "vlan_id", "Z-ACCESS"),
+    ]
+    assert [(issue.code, issue.field_path, issue.node_id) for issue in report.errors] == expected
+    assert all(issue.stage == ValidationStage.STATIC_OFFLINE for issue in report.issues)
+    assert all(issue.severity == ValidationSeverity.ERROR for issue in report.issues)
+    serialized = json.dumps(report.to_dict(), ensure_ascii=False)
+    decoded = json.loads(serialized)
+    assert [(issue["code"], issue["field_path"], issue["node_id"]) for issue in decoded["issues"]] == expected
+    assert all(issue["stage"] == "static_offline" and issue["severity"] == "error" for issue in decoded["issues"])
+    for issue_order in (tuple(reversed(report.issues)), (*report.issues[::2], *report.issues[1::2])):
+        reordered = ValidationReport(report.service_id, report.service_type, issue_order)
+        assert reordered == report
+        assert json.dumps(reordered.to_dict(), ensure_ascii=False) == serialized
