@@ -5,13 +5,15 @@ from io import StringIO
 from itertools import count
 from pathlib import Path
 from unittest.mock import Mock
+import csv
 import json
 import tomllib
 
 import pytest
 
 from intentfabric import bootstrap
-from intentfabric.application import NoOpExecutionLogger
+from intentfabric.adapters import SimulatedTransportAdapter
+from intentfabric.application import DeploymentService, DeterministicGeneratorService, NoOpExecutionLogger
 from intentfabric.cli import build_argument_parser, main
 from intentfabric.domain import PhaseTimings, PipelineOutcome, TopologyCatalog, TopologyNode
 from intentfabric.domain.errors import DeviceTransportError
@@ -142,6 +144,77 @@ def test_cli_returns_one_for_semantic_rejection(tmp_path: Path, command: str) ->
     assert record["error_code"] == "BANDWIDTH_EXCEEDS_PORT_CAPACITY"
     assert record["generation_plan"] is record["deployment_report"] is None
     assert not errors.getvalue()
+
+
+@pytest.mark.parametrize("changes,error_code", [
+    ({"vlan_id": 0}, "INVALID_VLAN_RANGE"),
+    ({"vlan_id": 4095}, "INVALID_VLAN_RANGE"),
+    ({"wan_subnet": "192.0.2.0/32"}, "INVALID_WAN_PREFIX_LENGTH"),
+])
+@pytest.mark.parametrize("command,transport", [
+    ("validate", "none"), ("generate", "none"),
+    ("validate", "simulated"), ("generate", "simulated"), ("deploy", "simulated"),
+    ("run", "simulated"), ("teardown", "simulated"),
+])
+def test_cli_exports_static_rejections_before_generation_or_transport(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, changes: dict[str, object],
+    error_code: str, command: str, transport: str,
+) -> None:
+    """Exporta el rechazo estatico sin generar, desplegar ni consultar equipos."""
+    raw = bootstrap.load_intent_file(_ROOT / "examples/intents/dia_valid.json")
+    raw.update(changes)
+    intent_path = tmp_path / "invalid.json"
+    intent_path.write_text(json.dumps(raw), encoding="utf-8", newline="\n")
+    json_path, csv_path = tmp_path / "execution.json", tmp_path / "summary.csv"
+    generate = Mock(side_effect=AssertionError("No debe ejecutarse generacion"))
+    deploy = Mock(side_effect=AssertionError("No debe ejecutarse despliegue"))
+    query = Mock(side_effect=AssertionError("No deben consultarse equipos"))
+    monkeypatch.setattr(DeterministicGeneratorService, "generate", generate)
+    monkeypatch.setattr(DeploymentService, "deploy", deploy)
+    monkeypatch.setattr(SimulatedTransportAdapter, "execute_show", query)
+    output, errors = StringIO(), StringIO()
+    assert main([
+        command, "-i", str(intent_path), "--transport", transport,
+        "-t", str(_ROOT / "inventory/topology.yaml"),
+        "--json-out", str(json_path), "--csv-out", str(csv_path),
+    ], stdout=output, stderr=errors) == 1
+    record = json.loads(output.getvalue())
+    assert record["outcome"] == "REJECTED_PRE_VALIDATION" and not record["is_successful"]
+    assert record["failure_stage"] == "static_offline" and record["error_code"] == error_code
+    assert record["generation_plan"] is record["deployment_report"] is record["post_validation_report"] is None
+    assert not record["validation_report"]["preflight_executed"]
+    assert record["timings"]["phase2_generation_ms"] == record["timings"]["phase3_deployment_ms"] == 0
+    assert json.loads(json_path.read_text(encoding="utf-8")) == record
+    with csv_path.open(encoding="utf-8", newline="\n") as stream:
+        rows = list(csv.DictReader(stream))
+    assert len(rows) == 1
+    assert (rows[0]["outcome"], rows[0]["failure_stage"], rows[0]["error_code"]) == (
+        "REJECTED_PRE_VALIDATION", "static_offline", error_code,
+    )
+    assert rows[0]["plan_sha256"] == rows[0]["sdc"] == ""
+    assert b"\r" not in json_path.read_bytes() and b"\r" not in csv_path.read_bytes()
+    assert not errors.getvalue()
+    generate.assert_not_called()
+    deploy.assert_not_called()
+    query.assert_not_called()
+
+
+@pytest.mark.parametrize("missing_hop", ["access", "transit", "provider_edge"])
+def test_simulated_transport_preserves_static_rejection_for_missing_nodes(missing_hop: str) -> None:
+    """Deja que Fase 1A reporte nodos ausentes sin fallar al preparar el simulador."""
+    catalog = bootstrap.build_plugin_catalog()
+    intent = catalog.parse_intent(bootstrap.load_intent_file(_ROOT / "examples/intents/dia_valid.json"))
+    if missing_hop == "transit":
+        intent = replace(intent, transits=(replace(intent.transits[0], node_id="LAB-MISSING"),))
+    else:
+        intent = replace(intent, **{missing_hop: replace(getattr(intent, missing_hop), node_id="LAB-MISSING")})
+    transport = bootstrap.build_simulated_transport_for_intent(intent)
+    record = bootstrap.build_orchestrator(catalog=catalog, transport=transport).run(intent)
+    assert record.outcome == PipelineOutcome.REJECTED_PRE_VALIDATION
+    assert any(issue.code == "TOPOLOGY_NODE_NOT_FOUND" and issue.node_id == "LAB-MISSING"
+               for issue in record.validation_report.errors)
+    assert record.generation_plan is record.deployment_report is None
+    assert transport.history == ()
 
 
 def test_cli_preflight_collision_prevents_configuration(monkeypatch: pytest.MonkeyPatch) -> None:

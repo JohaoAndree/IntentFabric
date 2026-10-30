@@ -23,8 +23,9 @@ from intentfabric.application.deployment import DeploymentService
 from intentfabric.application.transport import DeviceTransportPort
 from intentfabric.application.post_validation import PostValidationTriageService
 from intentfabric.application.template_source import TemplateSource
+from intentfabric.domain.errors import IntentFabricError
 from intentfabric.domain.intent import DiaIntent, L2VpnIntent, L3VpnIntent
-from intentfabric.domain.post_validation import build_expected_state
+from intentfabric.domain.post_validation import ExpectedState, build_expected_state
 from intentfabric.domain.topology import TopologyCatalog, TopologyNode
 from intentfabric.services.dia.context_builder import build_dia_hop_context
 from intentfabric.services.dia.intent_parser import DiaIntentParser
@@ -208,11 +209,74 @@ def build_simulated_transport_for_intent(
     Sintaxis de VLAN, interfaces, LLDP, MAC, ping, rutas y circuitos tomada de
     tests/fixtures/preflight/ y tests/fixtures/post_validation/. No requiere
     leer fixtures durante la ejecucion ni utilizar equipos externos.
+    Las derivaciones operativas invalidas se omiten para que Fase 1A emita
+    el rechazo taxonomico antes de ejecutar cualquier consulta de transporte.
     """
     topology = topology if topology is not None else load_default_topology()
+    clean_outputs = _simulated_clean_outputs(intent, topology)
+    try:
+        expected = build_expected_state(intent, variant=variant)
+    except (IntentFabricError, ValueError):
+        expected = None
+    operational_outputs = (
+        _simulated_operational_outputs(intent, topology, expected)
+        if expected is not None and all(topology.find_node(hop.node_id) is not None for hop in intent.hops)
+        else {}
+    )
+    pe = intent.provider_edge
+    interface_command = "show ip interface brief" if pe.vendor == "cisco" else "display interface brief"
+    return _IntentSimulatedTransport(clean_outputs, operational_outputs, (pe.node_id, interface_command))
+
+
+def _simulated_clean_outputs(
+    intent: DiaIntent | L3VpnIntent | L2VpnIntent, topology: TopologyCatalog,
+) -> dict[tuple[str, str], str]:
     clean_outputs: dict[tuple[str, str], str] = {}
+    l2_node_ids = (intent.access.node_id, *(hop.node_id for hop in intent.transits))
+    for hop in intent.hops:
+        node = topology.find_node(hop.node_id)
+        if node is None:
+            continue
+        cisco = node.vendor == "cisco"
+        if node.node_id in l2_node_ids:
+            vlan_command = "show vlan brief" if cisco else "display vlan"
+            clean_outputs[node.node_id, vlan_command] = (
+                "1 default active Gi1/0/1\n" if cisco else "1 common UT:GE0/0/1(U)\n"
+            )
+        if node.node_id == intent.access.node_id:
+            access = intent.access
+            if cisco:
+                clean_outputs[node.node_id, f"show interfaces {access.customer_port} switchport"] = (
+                    f"Name: {access.customer_port}\nSwitchport: Enabled\nAdministrative Mode: static access\n"
+                    "Operational Mode: static access\nAccess Mode VLAN: 1 (default)\n"
+                )
+            else:
+                clean_outputs[node.node_id, f"display port vlan {access.customer_port}"] = (
+                    f"{access.customer_port} access 1 -\n"
+                )
+        if node.node_id == intent.provider_edge.node_id:
+            pe = intent.provider_edge
+            interface_command = "show ip interface brief" if cisco else "display interface brief"
+            clean_outputs[node.node_id, interface_command] = (
+                f"{pe.parent_interface} unassigned YES NVRAM administratively down down\n" if cisco
+                else f"{pe.parent_interface} down down 0% 0% 0 0\n"
+            )
+            if isinstance(intent, DiaIntent):
+                vrf_command = "show vrf" if cisco else "display ip vpn-instance"
+                clean_outputs[node.node_id, vrf_command] = f"{intent.vrf_name} 65000:1 ipv4\n"
+            elif isinstance(intent, L3VpnIntent):
+                bgp_command = "show bgp all summary" if cisco else "display bgp peer"
+                clean_outputs[node.node_id, bgp_command] = (
+                    f"BGP router identifier 192.0.2.1, local AS number {intent.pe_asn}\n" if cisco
+                    else f"BGP local router ID : 192.0.2.2\nLocal AS number : {intent.pe_asn}\n"
+                )
+    return clean_outputs
+
+
+def _simulated_operational_outputs(
+    intent: DiaIntent | L3VpnIntent | L2VpnIntent, topology: TopologyCatalog, expected: ExpectedState,
+) -> dict[tuple[str, str], str]:
     operational_outputs: dict[tuple[str, str], str] = {}
-    expected = build_expected_state(intent, variant=variant)
     for hop in intent.hops:
         node = topology.get_node(hop.node_id)
         cisco = node.vendor == "cisco"
@@ -225,7 +289,6 @@ def build_simulated_transport_for_intent(
         if node.node_id in expected.l2_node_ids:
             vlan_command = "show vlan brief" if cisco else "display vlan"
             vlan_row = "{vlan} default active Gi1/0/1\n" if cisco else "{vlan} common UT:GE0/0/1(U)\n"
-            clean_outputs[node.node_id, vlan_command] = vlan_row.format(vlan=1)
             operational_outputs[node.node_id, vlan_command] = vlan_row.format(vlan=intent.vlan_id)
             mac_command = (f"show mac address-table vlan {intent.vlan_id}" if cisco
                            else f"display mac-address vlan {intent.vlan_id}")
@@ -234,31 +297,16 @@ def build_simulated_transport_for_intent(
                 else f"0200-0000-0001 {intent.vlan_id}/- {ports[0]} dynamic\n"
             )
     access = intent.access
-    if access.vendor == "cisco":
-        clean_outputs[access.node_id, f"show interfaces {access.customer_port} switchport"] = (
-            f"Name: {access.customer_port}\nSwitchport: Enabled\nAdministrative Mode: static access\n"
-            "Operational Mode: static access\nAccess Mode VLAN: 1 (default)\n"
-        )
-    else:
-        clean_outputs[access.node_id, f"display port vlan {access.customer_port}"] = (
-            f"{access.customer_port} access 1 -\n"
-        )
     pe = intent.provider_edge
     cisco = pe.vendor == "cisco"
     interface_command = "show ip interface brief" if cisco else "display interface brief"
-    clean_outputs[pe.node_id, interface_command] = (
-        f"{pe.parent_interface} unassigned YES NVRAM administratively down down\n" if cisco
-        else f"{pe.parent_interface} down down 0% 0% 0 0\n"
-    )
     operational_outputs[pe.node_id, interface_command] = (
         f"{expected.pe_subinterface} {expected.ping_target_ip or '192.0.2.1'} YES manual up up\n" if cisco
         else f"{expected.pe_subinterface} up up(s) 0% 0% 0 0\n"
     )
     if isinstance(intent, L2VpnIntent):
-        operational_outputs.update(_simulated_circuit_outputs(intent, variant))
+        operational_outputs.update(_simulated_circuit_outputs(intent, expected.variant))
     else:
-        vrf_command = "show vrf" if cisco else "display ip vpn-instance"
-        clean_outputs[pe.node_id, vrf_command] = f"{intent.vrf_name} 65000:1 ipv4\n"
         operational_outputs[access.node_id, f"ping {expected.ping_target_ip}"] = (
             "!!!!!\nSuccess rate is 100 percent (5/5), round-trip min/avg/max = 1/2/4 ms\n"
             if access.vendor == "cisco" else
@@ -270,11 +318,6 @@ def build_simulated_transport_for_intent(
             route_output = (f"S {intent.lan_network} [1/0] via {expected.svi_ip_address}\n" if cisco
                             else f"{intent.lan_network} Static 60 0 RD {expected.svi_ip_address} {expected.pe_subinterface}\n")
         else:
-            bgp_command = "show bgp all summary" if cisco else "display bgp peer"
-            clean_outputs[pe.node_id, bgp_command] = (
-                f"BGP router identifier 192.0.2.1, local AS number {intent.pe_asn}\n" if cisco
-                else f"BGP local router ID : 192.0.2.2\nLocal AS number : {intent.pe_asn}\n"
-            )
             route_command = (f"show bgp vpnv4 unicast vrf {intent.vrf_name}" if cisco
                              else f"display bgp vpnv4 vpn-instance {intent.vrf_name} routing-table")
             route_output = (f"*> {intent.wan_network} 0.0.0.0 0 32768 ?\n" if cisco
@@ -285,7 +328,7 @@ def build_simulated_transport_for_intent(
                 intent, expected.bgp_neighbor_ip,
             )
         operational_outputs[pe.node_id, route_command] = route_output
-    return _IntentSimulatedTransport(clean_outputs, operational_outputs, (pe.node_id, interface_command))
+    return operational_outputs
 
 
 def _simulated_circuit_outputs(intent: L2VpnIntent, variant: str) -> dict[tuple[str, str], str]:
