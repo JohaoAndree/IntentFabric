@@ -7,10 +7,13 @@ from itertools import permutations
 import json
 from pathlib import Path
 from typing import Any, ClassVar
+from unittest.mock import Mock
 
 import pytest
 
-from intentfabric.application import NoOpPreFlightChecker, PreFlightCheckerPort, PreValidationService
+from intentfabric.application import (
+    DeterministicGeneratorService, NoOpPreFlightChecker, PreFlightCheckerPort, PreValidationService,
+)
 from intentfabric.application.plugin_catalog import PluginCatalog, SemanticValidator
 from intentfabric.bootstrap import build_plugin_catalog, load_default_topology
 from intentfabric.adapters.intent_file_loader import load_intent_mapping
@@ -233,6 +236,46 @@ def test_dia_rejects_vlans_outside_the_service_range(vlan_id: int) -> None:
     assert len(issues) == 1
     assert issues[0].code == "INVALID_VLAN_RANGE"
     assert issues[0].field_path == "vlan_id"
+
+
+@pytest.mark.parametrize("prefix_length", [29, 31, 32])
+def test_dia_rejects_wan_prefixes_other_than_30(prefix_length: int) -> None:
+    """Identifica prefijos WAN sin /30 mediante codigo, campo y subfase estaticos."""
+    intent = replace(_dia_intent(), wan_network=IPv4Network(f"198.51.100.0/{prefix_length}"))
+    issues = validate_dia_intent_semantics(intent)
+    assert [(issue.code, issue.field_path, issue.stage) for issue in issues] == [
+        ("INVALID_WAN_PREFIX_LENGTH", "wan_network", ValidationStage.STATIC_OFFLINE),
+    ]
+
+
+@pytest.mark.parametrize("prefix_length", [29, 31, 32])
+def test_dia_invalid_wan_stops_preflight_and_generation(prefix_length: int) -> None:
+    """Rechaza la WAN antes de consultas online o renderizado conservando el reporte."""
+    intent = replace(_lab_intent(), wan_network=IPv4Network(f"192.0.2.0/{prefix_length}"))
+    checker = _PreFlightChecker()
+    catalog = build_plugin_catalog()
+    validator = PreValidationService(catalog, checker, topology=load_default_topology())
+    report = validator.validate(intent)
+    assert not report.is_valid and not report.preflight_executed
+    assert [(issue.code, issue.field_path, issue.stage) for issue in report.errors] == [
+        ("INVALID_WAN_PREFIX_LENGTH", "wan_network", ValidationStage.STATIC_OFFLINE),
+    ]
+    renderer = Mock()
+    generator = DeterministicGeneratorService(catalog, renderer, validator)
+    with pytest.raises(PreValidationFailedError) as captured:
+        generator.generate(intent)
+    assert captured.value.report == report
+    assert checker.call_count == 0
+    renderer.render.assert_not_called()
+
+
+def test_dia_accumulates_invalid_wan_with_other_semantic_errors() -> None:
+    """Acumula el prefijo WAN invalido junto con VLAN y capacidad invalidas."""
+    intent = replace(_dia_intent(), wan_network=IPv4Network("198.51.100.0/32"),
+                     vlan_id=0, bandwidth_mbps=1001)
+    assert {issue.code for issue in validate_dia_intent_semantics(intent)} == {
+        "INVALID_WAN_PREFIX_LENGTH", "INVALID_VLAN_RANGE", "BANDWIDTH_EXCEEDS_PORT_CAPACITY",
+    }
 
 
 @pytest.mark.parametrize("vlan_id", [1, 1002, 1003, 1004, 1005])

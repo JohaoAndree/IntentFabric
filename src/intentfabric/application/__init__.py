@@ -1,5 +1,7 @@
 """Pipeline, fases y puertos (contratos) de la aplicación."""
 
+from intentfabric.application.orchestrator import ExecutionLoggerPort, NoOpExecutionLogger, PipelineOrchestrator
+
 from intentfabric.application.pre_validation import (
     NoOpPreFlightChecker, PreFlightCheckerPort, PreValidationService,
 )
@@ -13,6 +15,7 @@ from intentfabric.application.post_validation import PostValidationTriageService
 
 
 __all__ = (
+    "ExecutionLoggerPort", "NoOpExecutionLogger", "PipelineOrchestrator",
     "PostValidationTriageService",
     "DeploymentService", "OnlinePreFlightChecker", "DeviceTransportPort",
     "TopologyPathResolver", "TopologyRepositoryPort",
