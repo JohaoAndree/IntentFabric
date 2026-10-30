@@ -161,7 +161,7 @@ graph TD
 | **ADR-009** | E2 | Extensión del servicio L2VPN con soporte dual (`evpn_vpws` / `martini_ldp`) | Accepted | ADR-006, ADR-007 | Parser de intención L2VPN punto a punto, plantillas por variante (`evpn_vpws` y fallback `martini_ldp`) para Cisco/Huawei y pruebas contra Golden Files.|
 | **ADR-010** | E3 | Transporte de dispositivos (Netmiko/Simulado), Pre-Flight Online y Despliegue | Accepted | ADR-007, ADR-008, ADR-009 | Puerto `DeviceTransportPort`, `NetmikoTransportAdapter` (con soporte `commit` en Huawei V600), `SimulatedTransportAdapter` con fixtures reales de laboratorio, Fase 1B y Fase 3.|
 | **ADR-011** | E4 | Validación posdespliegue: Parsers deterministas, Triage en Cascada y Sonda SVI | Accepted | ADR-010 | Parsers de `show`/`display`, motor de Triage de 4 pasos (Core, LLDP, MAC, Sonda SVI efímera con `finally` de limpieza) y evaluador `SDC` con lógica dual `OPERATIONAL`/`READY_FOR_SERVICE`.|
-| **ADR-012** | E4 | Orquestador del Pipeline de 4 Fases, Registro Experimental y CLI `intentfabric` | Proposed | ADR-011 | `PipelineOrchestrator`, `ExecutionRecord` (tiempos por fase, hash, errores, `SDC`), exportador JSON/CSV para análisis estadístico y CLI con `argparse` (`validate`, `generate`, `run`, `teardown`).|
+| **ADR-012** | E4 | Orquestador del Pipeline de 4 Fases, Registro Experimental y CLI `intentfabric` | Accepted | ADR-011 | `PipelineOrchestrator`, `ExecutionRecord` (tiempos por fase, hash, errores, `SDC`), exportador JSON/CSV para análisis estadístico y CLI con `argparse` (`validate`, `generate`, `run`, `teardown`).|
 
 ---
 

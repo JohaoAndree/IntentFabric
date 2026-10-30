@@ -1,5 +1,7 @@
 """Modelos puros e inmutables del dominio, sin efectos externos."""
 
+from intentfabric.domain.execution import CSV_HEADERS, ExecutionRecord, PhaseTimings, PipelineOutcome
+
 from intentfabric.domain.derivations import (
     BandwidthRates, QosRates, WanAddresses, derive_bandwidth_rates, derive_qos_rates,
     derive_subinterface_name, derive_wan_addresses,
@@ -38,6 +40,7 @@ from intentfabric.domain.intent import (
 )
 
 __all__ = (
+    "CSV_HEADERS", "ExecutionRecord", "PhaseTimings", "PipelineOutcome",
     "EphemeralProbeCleanupError", "PostValidationContractError", "PostValidationFailedError", "ExpectedState", "ObservedState",
     "PostValidationReport", "ServiceOperationalStatus", "TriageStepName", "TriageStepResult",
     "build_expected_state", "build_ephemeral_svi_provision_commands",
