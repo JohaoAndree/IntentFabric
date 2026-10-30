@@ -129,15 +129,17 @@ graph TD
 
 ## 5. Alcance por Etapas (Control de Scope para Parte B)
 
-* **Etapa Actual (`E1` — Corte Vertical Fundacional y Determinismo Offline DIA):**
+* **Estado del proyecto:** MVP implementado hasta ADR-012; etapas E1–E4 completadas.
+
+* **`E1` completada (Corte Vertical Fundacional y Determinismo Offline DIA):**
 * Consolidación de la arquitectura hexagonal (ADR-001), entorno y bloqueo de dependencias (ADR-002), modelo de intención DIA (ADR-003), catálogo de plugins (ADR-004), validación previa estática y contrato de Pre-Flight (ADR-005), y motor de generación determinista Jinja2 con Golden Configs para DIA en Cisco IOS-XE y Huawei VRP corrigiendo la conversión de QoS a base 1000 estándar (ADR-006).
 
-* **Etapa de Cierre de MVP para TI2 (`E2`–`E4` — Topología, 3 Servicios y Ciclo Cerrado de 4 Fases):**
-* **`E2` (Topología y Servicios MPLS):** Catálogo estático `inventory/topology.yaml` y normalizador de interfaces (ADR-007); modelos de intención, validación y plantillas Golden para L3VPN con BGP + `redistribute connected` (ADR-008) y L2VPN con soporte dual `evpn_vpws` / `martini_ldp` y plantillas de retiro `teardown` para limpieza de laboratorio (ADR-009).
+* **Cierre del MVP para TI2 (`E2`–`E4` completadas — Topología, 3 Servicios y Ciclo Cerrado de 4 Fases):**
+* **`E2` completada (Topología y Servicios MPLS):** Catálogo estático `inventory/topology.yaml`, `TopologyPathResolver` y normalizador de interfaces (ADR-007); modelos de intención, validación y plantillas Golden para L3VPN con BGP + `redistribute connected` (ADR-008) y L2VPN con soporte dual `evpn_vpws` / `martini_ldp` y plantillas de retiro `teardown` para limpieza de laboratorio (ADR-009).
 
-* **`E3` (Transporte, Pre-Flight Online y Despliegue):** Puerto de transporte SSH (`NetmikoTransportAdapter` con soporte `commit` para Huawei V600 y `SimulatedTransportAdapter` con fixtures reales de Cisco IOS-XE 17.x y Huawei VRP), ejecución de Fase 1B (Pre-Flight Check) y Fase 3 (Despliegue) (ADR-010).
+* **`E3` completada (Transporte, Pre-Flight Online y Despliegue):** `DeviceTransportPort`, `NetmikoTransportAdapter` con `commit` para `huawei_vrpv8` y `SimulatedTransportAdapter`; Pre-Flight online de solo lectura (Fase 1B) y `DeploymentService` (Fase 3) con corte Fail-Fast y resultados parciales para `provision`/`teardown` (ADR-010).
 
-* **`E4` (Validación Posdespliegue, Orquestador y CLI):** Parsers deterministas de estado y motor de *Triage en Cascada* con Sonda SVI Efímera y lógica dual `OPERATIONAL`/`READY_FOR_SERVICE` (ADR-011); Orquestador del Pipeline de 4 fases, logger de métricas (`SDC`, tiempos, taxonomía de errores) e interfaz CLI `intentfabric` (`validate`, `generate`, `deploy`, `verify`, `run`, `teardown`) (ADR-012).
+* **`E4` completada (Validación Posdespliegue, Orquestador y CLI):** Parsers deterministas y `PostValidationTriageService` con Sonda SVI Efímera para DIA/L3VPN, limpieza en `finally`, comprobación de circuitos L2VPN y estados `OPERATIONAL`/`READY_FOR_SERVICE` (ADR-011); `PipelineOrchestrator`, `ExecutionRecord` (tiempos por fase/total, hash, SDC y errores), `ExecutionLoggerPort` con `FileExecutionLogger` JSON/CSV e interfaz CLI `intentfabric` (`validate`, `generate`, `deploy`, `verify`, `run`, `teardown`) (ADR-012).
 
 * **Fuera de Alcance del MVP (`E5+` / Iteraciones Futuras):**
 * *Rollback transaccional compensatorio ante fallo parcial a mitad de comando* (diferido por recomendación del asesor de arquitectura; el MVP utiliza plantillas de retiro `teardown` de servicio completo y comandos de restauración de línea base entre pruebas).
@@ -148,20 +150,22 @@ graph TD
 
 ## 6. Hoja de Ruta y Grafo de ADRs
 
+Implementación completada de ADR-001 a ADR-012 (E1–E4). Los estados reflejan la aprobación; ADR-003 conserva su sustitución parcial por ADR-007.
+
 | ID | Etapa | Título | Estado | Depende de | Alcance de Implementación (Resumen Parte B) |
 | --- | --- | --- | --- | --- | --- |
 | **ADR-001** | E1 | Arquitectura hexagonal sobre el pipeline | Accepted | — | Estructura de paquetes en `src/intentfabric/`, fronteras de dependencias y validación estática por AST en `test_architecture.py`.|
 | **ADR-002** | E1 | Entorno de ejecución, empaquetado y bloqueo de dependencias | Accepted | ADR-001 | Configuración de `pyproject.toml` (`Python >= 3.13`), extras `dev`/`ssh`, `requirements.lock` y `scripts/check_env.py`.|
-| **ADR-003** | E1 | Modelo de intención estructurada para el servicio DIA (v1) | Accepted | ADR-001 | Esquema JSON/YAML de DIA, parser estricto en `services/dia/intent_parser.py`, modelos en `domain/intent.py` y derivaciones iniciales.|
+| **ADR-003** | E1 | Modelo de intención estructurada para el servicio DIA (v1) | Partially Superseded por ADR-007 | ADR-001 | Esquema JSON/YAML de DIA, parser estricto en `services/dia/intent_parser.py`, modelos en `domain/intent.py` y derivaciones iniciales.|
 | **ADR-004** | E1 | Contrato de extensión para servicios y fabricantes | Accepted | ADR-001, ADR-003 | `VendorDefinition`, `TemplateKey`, puerto `TemplateSource`, `PluginCatalog`, `PackagedTemplateSource` y registro en `bootstrap.py`.|
 | **ADR-005** | E1 | Validación previa de intenciones (Reglas semánticas y contrato Pre-Flight) | Accepted | ADR-003, ADR-004 | Modelos `ValidationIssue`/`ValidationReport`, validador semántico offline (prefijos, rangos VLAN, soporte en catálogo) y puerto `PreFlightCheckerPort`.|
 | **ADR-006** | E1 | Motor de generación determinista, ajuste QoS estándar y Golden Configs DIA | Accepted | ADR-004, ADR-005 | Estandarización de cálculo QoS en base 1000 (bps Cisco / kbps Huawei), adaptador Jinja2 (`StrictUndefined`, SHA-256) y plantillas + Golden Files DIA (`provision`/`teardown`).|
 | **ADR-007** | E2 | Catálogo de topología estática (`inventory/`) y normalización de interfaces | Accepted | ADR-005, ADR-006 | Esquema `inventory/topology.yaml`, adaptador `YamlTopologyRepository`, resolvedor de rutas L2->PE y función `normalize_interface_name` (`Gi0/0/1.x` $\leftrightarrow$ `GigabitEthernet0/0/1.x`). |
 | **ADR-008** | E2 | Extensión del servicio L3VPN (Modelo, BGP `redistribute connected` y Golden Configs) | Accepted | ADR-006, ADR-007 | Parser de intención L3VPN (VRF, RD, RT, BGP PE-CE, QoS), plantillas Cisco IOS-XE y Huawei VRP y pruebas contra Golden Files.|
 | **ADR-009** | E2 | Extensión del servicio L2VPN con soporte dual (`evpn_vpws` / `martini_ldp`) | Accepted | ADR-006, ADR-007 | Parser de intención L2VPN punto a punto, plantillas por variante (`evpn_vpws` y fallback `martini_ldp`) para Cisco/Huawei y pruebas contra Golden Files.|
-| **ADR-010** | E3 | Transporte de dispositivos (Netmiko/Simulado), Pre-Flight Online y Despliegue | Accepted | ADR-007, ADR-008, ADR-009 | Puerto `DeviceTransportPort`, `NetmikoTransportAdapter` (con soporte `commit` en Huawei V600), `SimulatedTransportAdapter` con fixtures reales de laboratorio, Fase 1B y Fase 3.|
-| **ADR-011** | E4 | Validación posdespliegue: Parsers deterministas, Triage en Cascada y Sonda SVI | Accepted | ADR-010 | Parsers de `show`/`display`, motor de Triage de 4 pasos (Core, LLDP, MAC, Sonda SVI efímera con `finally` de limpieza) y evaluador `SDC` con lógica dual `OPERATIONAL`/`READY_FOR_SERVICE`.|
-| **ADR-012** | E4 | Orquestador del Pipeline de 4 Fases, Registro Experimental y CLI `intentfabric` | Accepted | ADR-011 | `PipelineOrchestrator`, `ExecutionRecord` (tiempos por fase, hash, errores, `SDC`), exportador JSON/CSV para análisis estadístico y CLI con `argparse` (`validate`, `generate`, `run`, `teardown`).|
+| **ADR-010** | E3 | Transporte de dispositivos (Netmiko/Simulado), Pre-Flight Online y Despliegue | Accepted | ADR-007, ADR-008, ADR-009 | `DeviceTransportPort`, `NetmikoTransportAdapter` (`commit` en `huawei_vrpv8`), `SimulatedTransportAdapter`, Pre-Flight de solo lectura y despliegue secuencial Fail-Fast con resultados parciales.|
+| **ADR-011** | E4 | Validación posdespliegue: Parsers deterministas, Triage en Cascada y Sonda SVI | Accepted | ADR-010 | Parsers de `show`/`display`, triage (interfaz PE, LLDP, VLAN/MAC y control del servicio), Sonda SVI DIA/L3VPN con limpieza en `finally`, circuitos L2VPN y `SDC` con estados `OPERATIONAL`/`READY_FOR_SERVICE`.|
+| **ADR-012** | E4 | Orquestador del Pipeline de 4 Fases, Registro Experimental y CLI `intentfabric` | Accepted | ADR-011 | `PipelineOrchestrator`, `ExecutionRecord` (tiempos por fase/total, hash, errores, `SDC`), `ExecutionLoggerPort` con `FileExecutionLogger` JSON/CSV y CLI `argparse` (`validate`, `generate`, `deploy`, `verify`, `run`, `teardown`).|
 
 ---
 
