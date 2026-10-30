@@ -11,6 +11,10 @@ from intentfabric.domain.template_key import Operation
 from intentfabric.domain.validation import ValidationReport
 
 
+class _ExecutionContractError(IntentFabricError):
+    """Identifica una invariante invalida del registro experimental."""
+
+
 class PipelineOutcome(StrEnum):
     """Identifica el resultado alcanzado por una ejecucion del pipeline."""
 
@@ -47,7 +51,7 @@ class PhaseTimings:
         for field in fields(self):
             value = getattr(self, field.name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not value >= 0:
-                raise IntentFabricError(f"{field.name}: se requiere un numero no negativo")
+                raise _ExecutionContractError(f"{field.name}: se requiere un numero no negativo")
             object.__setattr__(self, field.name, round(float(value), 3))
 
     def to_dict(self) -> dict[str, float]:
@@ -80,15 +84,15 @@ class ExecutionRecord:
         for name in ("service_id", "service_type", "variant"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
-                raise IntentFabricError(f"{name}: se requiere texto no vacio")
+                raise _ExecutionContractError(f"{name}: se requiere texto no vacio")
         for name, expected in (("operation", Operation), ("outcome", PipelineOutcome),
                                ("timings", PhaseTimings)):
             if not isinstance(getattr(self, name), expected):
-                raise IntentFabricError(f"{name}: se requiere {expected.__name__}")
+                raise _ExecutionContractError(f"{name}: se requiere {expected.__name__}")
         if type(self.is_successful) is not bool:
-            raise IntentFabricError("is_successful: se requiere bool")
+            raise _ExecutionContractError("is_successful: se requiere bool")
         if self.sdc is not None and (type(self.sdc) is not int or self.sdc not in (0, 1)):
-            raise IntentFabricError("sdc: se requiere None, 0 o 1")
+            raise _ExecutionContractError("sdc: se requiere None, 0 o 1")
 
     def to_dict(self) -> dict[str, object]:
         """Serializa el registro completo con claves fijas y reportes anidados."""

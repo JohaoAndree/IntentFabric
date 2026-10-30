@@ -19,8 +19,9 @@ def _record() -> ExecutionRecord:
 @pytest.mark.parametrize("value", [-1, True, "1", None, float("nan")])
 def test_timings_reject_invalid_values(name: str, value: object) -> None:
     """Exige numeros no negativos en cada duracion sin aceptar booleanos."""
-    with pytest.raises(IntentFabricError, match=name):
+    with pytest.raises(IntentFabricError, match=name) as captured:
         PhaseTimings(**{name: value})
+    assert type(captured.value) is not IntentFabricError
 
 
 def test_timings_round_and_preserve_field_order() -> None:
@@ -38,8 +39,9 @@ def test_timings_round_and_preserve_field_order() -> None:
 ])
 def test_execution_rejects_invalid_contract_fields(name: str, value: object) -> None:
     """Rechaza identidad vacia, enumerados ausentes y SDC fuera del contrato."""
-    with pytest.raises(IntentFabricError, match=name):
+    with pytest.raises(IntentFabricError, match=name) as captured:
         replace(_record(), **{name: value})
+    assert type(captured.value) is not IntentFabricError
 
 
 @pytest.mark.parametrize("sdc", [None, 0, 1])

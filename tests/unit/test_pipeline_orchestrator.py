@@ -3,6 +3,7 @@
 from dataclasses import replace
 from itertools import count
 from pathlib import Path
+from typing import Any
 from unittest.mock import Mock
 import csv
 import json
@@ -17,7 +18,8 @@ from intentfabric.bootstrap import build_deployment_service, build_generator, bu
 from intentfabric.domain import (
     CSV_HEADERS, DeploymentError, DiaIntent, ExecutionRecord, L2VpnIntent, L3VpnIntent,
     ObservedState, PhaseTimings, PipelineOutcome, PostValidationReport, ServiceOperationalStatus,
-    TriageStepName, TriageStepResult, ValidationIssue, ValidationStage, build_expected_state,
+    ServiceDeploymentReport, ServiceGenerationPlan, TriageStepName, TriageStepResult,
+    ValidationIssue, ValidationReport, ValidationStage, build_expected_state,
 )
 from intentfabric.domain.errors import PluginRegistrationError
 from intentfabric.domain.template_key import Operation
@@ -62,19 +64,19 @@ def _pipeline(
     deployment = build_deployment_service(topology, transport=SimulatedTransportAdapter())
     post = Mock()
 
-    def validate(*args: object, **kwargs: object):
+    def validate(*args: Any, **kwargs: Any) -> ValidationReport:
         events.append("phase1")
         return pre.validate(*args, **kwargs)
 
-    def generate(*args: object, **kwargs: object):
+    def generate(*args: Any, **kwargs: Any) -> ServiceGenerationPlan:
         events.append("phase2")
         return generator.generate(*args, **kwargs)
 
-    def deploy(*args: object, **kwargs: object):
+    def deploy(*args: Any, **kwargs: Any) -> ServiceDeploymentReport:
         events.append("phase3")
         return deployment.deploy(*args, **kwargs)
 
-    def verify(*args: object, **kwargs: object):
+    def verify(*args: Any, **kwargs: Any) -> PostValidationReport:
         events.append("phase4")
         return _post_report(intent, status)
 
