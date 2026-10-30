@@ -1,17 +1,24 @@
-"""Acumula las cuatro reglas semanticas offline del servicio DIA."""
+"""Acumula reglas offline de VLAN, prefijo WAN, gestion y capacidad de DIA."""
 
 from intentfabric.domain.intent import DiaIntent
 from intentfabric.domain.validation import ValidationIssue, ValidationStage
 
 
 def validate_dia_intent_semantics(intent: DiaIntent) -> tuple[ValidationIssue, ...]:
-    """Detecta VLAN invalida o reservada, gestion superpuesta y exceso de capacidad."""
+    """Detecta VLAN invalida o reservada, WAN sin /30, gestion superpuesta y exceso de capacidad."""
     issues: list[ValidationIssue] = []
     if not 1 <= intent.vlan_id <= 4094:
         issues.append(ValidationIssue(
             code="INVALID_VLAN_RANGE",
             message="vlan_id: utilice una VLAN entre 1 y 4094.",
             stage=ValidationStage.STATIC_OFFLINE, field_path="vlan_id",
+        ))
+
+    if intent.wan_network.prefixlen != 30:
+        issues.append(ValidationIssue(
+            code="INVALID_WAN_PREFIX_LENGTH",
+            message="wan_network: utilice un prefijo /30.",
+            stage=ValidationStage.STATIC_OFFLINE, field_path="wan_network",
         ))
 
     hops = (intent.access, *intent.transits, intent.provider_edge)
