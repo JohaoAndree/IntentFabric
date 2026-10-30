@@ -240,9 +240,15 @@ def _simulated_clean_outputs(
         cisco = node.vendor == "cisco"
         if node.node_id in l2_node_ids:
             vlan_command = "show vlan brief" if cisco else "display vlan"
-            clean_outputs[node.node_id, vlan_command] = (
-                "1 default active Gi1/0/1\n" if cisco else "1 common UT:GE0/0/1(U)\n"
+            vlan_header = (
+                "VLAN Name                             Status    Ports\n"
+                "---- -------------------------------- --------- -------------------------------\n" if cisco else
+                "VID  Type    Ports\n"
+                "-------------------------------------------------------------------------------\n"
             )
+            vlan_row = ("1    default                          active    Gi1/0/1\n" if cisco
+                        else "1    common  UT:GE0/0/1(U)\n")
+            clean_outputs[node.node_id, vlan_command] = vlan_header + (vlan_row if intent.vlan_id != 1 else "")
         if node.node_id == intent.access.node_id:
             access = intent.access
             if cisco:

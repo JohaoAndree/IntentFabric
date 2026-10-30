@@ -1,6 +1,6 @@
 """Verifica la CLI y su composicion completa sin hardware ni credenciales."""
 
-from dataclasses import replace
+from dataclasses import asdict, replace
 from io import StringIO
 from itertools import count
 from pathlib import Path
@@ -25,6 +25,16 @@ _ROOT = Path(__file__).resolve().parents[2]
 def _arguments(command: str, service: str = "dia", suffix: str = "yaml") -> list[str]:
     return [command, "-i", str(_ROOT / f"examples/intents/{service}_valid.{suffix}"),
             "-t", str(_ROOT / "inventory/topology.yaml")]
+
+
+def _write_huawei_topology(directory: Path) -> Path:
+    document = asdict(bootstrap.load_default_topology())
+    for node in document["nodes"]:
+        node.update(vendor="huawei", model="LAB-HUAWEI",
+                    os_family="huawei_vrpv8" if node["role"] == "pe" else "huawei")
+    path = directory / "huawei-topology.yaml"
+    path.write_text(json.dumps(document, default=str), encoding="utf-8", newline="\n")
+    return path
 
 
 @pytest.mark.parametrize("service", ["dia", "l3vpn", "l2vpn"])
@@ -56,6 +66,64 @@ def test_cli_online_validate_has_clean_preflight(service: str) -> None:
                 stdout=output, stderr=errors) == 0
     assert json.loads(output.getvalue())["validation_report"]["preflight_executed"]
     assert not errors.getvalue()
+
+
+@pytest.mark.parametrize("service", ["dia", "l3vpn", "l2vpn"])
+@pytest.mark.parametrize("command", ["validate", "run"])
+def test_cli_huawei_path_accepts_vlan_one(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, service: str, command: str,
+) -> None:
+    """Acepta VLAN 1 libre en Huawei y conserva el resultado propio de cada caso de uso."""
+    topology_path = _write_huawei_topology(tmp_path)
+    topology = bootstrap.load_default_topology(topology_path)
+    raw = bootstrap.load_intent_file(_ROOT / f"examples/intents/{service}_valid.json")
+    raw["vlan_id"] = 1
+    intent_path = tmp_path / "intent.json"
+    intent_path.write_text(json.dumps(raw), encoding="utf-8", newline="\n")
+    intent = bootstrap.build_plugin_catalog(topology).parse_intent(raw)
+    assert all(hop.vendor == "huawei" for hop in intent.hops)
+    assert len(intent.transits) == 1
+    transport = bootstrap.build_simulated_transport_for_intent(intent, topology=topology)
+    monkeypatch.setattr(bootstrap, "build_simulated_transport_for_intent", lambda *args, **kwargs: transport)
+    output, errors = StringIO(), StringIO()
+    assert main([command, "-i", str(intent_path), "-t", str(topology_path), "--transport", "simulated"],
+                stdout=output, stderr=errors) == 0
+    record = json.loads(output.getvalue())
+    assert record["is_successful"] and record["validation_report"]["preflight_executed"]
+    assert record["outcome"] == ("VALIDATED" if command == "validate" else "OPERATIONAL")
+    assert record["sdc"] == (None if command == "validate" else 1)
+    fixture = (_ROOT / "tests/fixtures/preflight/huawei_display_vlan_clean.txt").read_text(encoding="utf-8")
+    header = "".join(fixture.splitlines(keepends=True)[:-1])
+    for hop in (intent.access, *intent.transits):
+        vlan_queries = [item for item in transport.history
+                        if item.node_id == hop.node_id and item.commands == ("display vlan",)]
+        assert vlan_queries[0].raw_output == header
+        if command == "run":
+            assert len(vlan_queries) == 2 and "1 common" in vlan_queries[1].raw_output
+    if command == "run":
+        assert all(result["vendor"] == "huawei" for result in record["deployment_report"]["results"])
+        assert record["post_validation_report"]["observed_state"]["active_vlan_nodes"] == [
+            intent.access.node_id, *(hop.node_id for hop in intent.transits),
+        ]
+    assert not errors.getvalue()
+
+
+@pytest.mark.parametrize("vendor", ["cisco", "huawei"])
+@pytest.mark.parametrize("vlan_id", [1, 210])
+def test_simulated_clean_vlan_responses_match_authorized_fixtures(vendor: str, vlan_id: int) -> None:
+    """Conserva la tabla autorizada y omite su fila VLAN 1 solo si es la VLAN solicitada."""
+    raw = bootstrap.load_intent_file(_ROOT / "examples/intents/dia_valid.json")
+    raw["vlan_id"] = vlan_id
+    if vendor == "huawei":
+        raw.update(access_node_id="S3-4505-TEST", access_interface="GE0/0/1", pe_node_id="PE1-TEST")
+    topology = bootstrap.load_default_topology()
+    intent = bootstrap.build_plugin_catalog(topology).parse_intent(raw)
+    transport = bootstrap.build_simulated_transport_for_intent(intent, topology=topology)
+    fixture_name = "cisco_show_vlan_brief_clean.txt" if vendor == "cisco" else "huawei_display_vlan_clean.txt"
+    fixture = (_ROOT / "tests/fixtures/preflight" / fixture_name).read_text(encoding="utf-8")
+    expected = fixture if vlan_id != 1 else "".join(fixture.splitlines(keepends=True)[:-1])
+    command = "show vlan brief" if vendor == "cisco" else "display vlan"
+    assert transport.execute_show(topology.get_node(intent.access.node_id), command) == expected
 
 
 @pytest.mark.parametrize("vendor", ["cisco", "huawei"])
