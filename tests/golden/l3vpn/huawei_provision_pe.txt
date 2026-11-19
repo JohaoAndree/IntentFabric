@@ -14,7 +14,7 @@ traffic behavior QOS_L3VPN_100M_BEHAVIOR
 traffic policy QOS_L3VPN_100M
  classifier QOS_L3VPN_100M_CLASS behavior QOS_L3VPN_100M_BEHAVIOR
 #
-interface GigabitEthernet0/0/0.110
+interface GE0/0/1.110
  description L3VPN-CORP-000001
  dot1q termination vid 110
  ip binding vpn-instance VRF_CORP_A

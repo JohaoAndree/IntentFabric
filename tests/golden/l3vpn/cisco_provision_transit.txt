@@ -4,6 +4,6 @@ exit
 interface GigabitEthernet1/0/11
  switchport trunk allowed vlan add 210
 exit
-interface GigabitEthernet1/0/25
+interface GigabitEthernet1/0/24
  switchport trunk allowed vlan add 210
 exit

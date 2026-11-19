@@ -16,7 +16,7 @@ traffic behavior QOS_L2VPN_100M_BEHAVIOR
 traffic policy QOS_L2VPN_100M
  classifier QOS_L2VPN_100M_CLASS behavior QOS_L2VPN_100M_BEHAVIOR
 #
-interface GigabitEthernet0/0/0.310
+interface GE0/0/1.310
  description L2VPN-CORP-000001
  dot1q termination vid 310
  evpl instance 310

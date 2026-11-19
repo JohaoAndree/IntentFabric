@@ -1,4 +1,4 @@
-undo interface GigabitEthernet0/0/0.310
+undo interface GE0/0/1.310
 #
 undo traffic policy QOS_L2VPN_100M
 undo traffic behavior QOS_L2VPN_100M_BEHAVIOR

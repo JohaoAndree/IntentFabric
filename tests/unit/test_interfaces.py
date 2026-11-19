@@ -29,8 +29,45 @@ def test_supported_interfaces_have_exact_canonical_and_native_forms(
     assert normalize_interface_name(name) == canonical
     assert normalize_interface_name(name.swapcase()) == canonical
     assert normalize_interface_name(canonical) == canonical
+    assert normalize_interface_name(name, vendor="cisco") == (
+        "Vlan10" if name == "Vlanif10" else canonical
+    )
+    assert normalize_interface_name(name, vendor="huawei") == (
+        canonical if name in ("Fa0/1", "Eth0/1") else ("Loopback0" if name == "Lo0" else huawei)
+    )
     assert abbreviate_interface_name(name, "cisco") == cisco
     assert abbreviate_interface_name(name, "huawei") == huawei
+
+
+def test_huawei_yunshan_native_normalization_and_vlanif_spacing() -> None:
+    """Normaliza prefijos nativos YunShan OS y espacios entre Vlanif y su indice."""
+    assert normalize_interface_name("GigabitEthernet0/0/1.10", vendor="huawei") == "GE0/0/1.10"
+    assert normalize_interface_name("gi1/0/24", vendor="huawei") == "GE1/0/24"
+    assert normalize_interface_name("ge0/0/1", vendor="huawei") == "GE0/0/1"
+    assert normalize_interface_name("TenGigabitEthernet1/0/1", vendor="huawei") == "10GE1/0/1"
+    assert normalize_interface_name("10ge0/0/0", vendor="huawei") == "10GE0/0/0"
+    assert normalize_interface_name("multige0/0/1", vendor=" HUAWEI ") == "MultiGE0/0/1"
+    assert normalize_interface_name("Vlanif 999", vendor="huawei") == "Vlanif999"
+    assert normalize_interface_name("vlanif999", vendor="huawei") == "Vlanif999"
+    assert normalize_interface_name("lo0", vendor="huawei") == "Loopback0"
+    assert abbreviate_interface_name("lo0", "huawei") == "LoopBack0"
+    assert abbreviate_interface_name("Vlanif 999", "huawei") == "Vlanif999"
+    assert normalize_interface_name("MultiGE0/0/1") == "MultiGigabitEthernet0/0/1"
+    assert abbreviate_interface_name("MultiGE0/0/1", "huawei") == "MultiGE0/0/1"
+    for invalid_vendor in ("cisco", None, "Cisco", " CISCO "):
+        with pytest.raises(InvalidInterfaceNameError):
+            normalize_interface_name("Vlanif 999", vendor=invalid_vendor)
+    for cisco_variant in ("cisco", "Cisco", " CISCO "):
+        for multige in ("MultiGE0/0/1", "multigigabitethernet0/0/1", "mge0/0/1"):
+            with pytest.raises(InvalidInterfaceNameError):
+                normalize_interface_name(multige, vendor=cisco_variant)
+    with pytest.raises(InvalidInterfaceNameError):
+        abbreviate_interface_name("MultiGE0/0/1", "cisco")
+    assert normalize_interface_name("Vlanif10", vendor="Cisco") == "Vlanif10"
+    assert normalize_interface_name("Vlanif10", vendor=" CISCO ") == "Vlanif10"
+    for cisco_variant in ("Cisco", " CISCO "):
+        with pytest.raises(InvalidInterfaceNameError, match="vendor"):
+            abbreviate_interface_name("Gi0/1", cisco_variant)
 
 
 @pytest.mark.parametrize("name", (

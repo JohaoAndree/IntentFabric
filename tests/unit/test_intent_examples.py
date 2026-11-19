@@ -20,15 +20,15 @@ def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
         wan_network=IPv4Network("192.168.10.0/30"), lan_network=IPv4Network("10.50.1.8/29"),
         bandwidth_mbps=100, qos_policy_name="TEST_POLICY",
         access=AccessHop(
-            "S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"),
+            "S1-CISCO-TEST", "cisco", IPv4Address("192.168.56.101"),
             "GigabitEthernet1/0/1", "GigabitEthernet1/0/10",
         ),
         transits=(TransitHop(
-            "S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"),
-            "GigabitEthernet1/0/24", "GigabitEthernet1/0/25",
+            "S2-HUAWEI-TEST", "huawei", IPv4Address("192.168.56.102"),
+            "GE1/0/24", "GE1/0/23",
         ),),
         provider_edge=ProviderEdgeHop(
-            "PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0",
+            "PE2-HUAWEI-TEST", "huawei", IPv4Address("192.168.56.103"), "GE0/0/1",
         ),
     )
     assert json_raw == yaml_raw
@@ -58,9 +58,9 @@ def test_l3vpn_json_yaml_examples_match_the_approved_inventory_endpoint() -> Non
         wan_network=IPv4Network("172.16.10.0/30"), bandwidth_mbps=100,
         qos_policy_name="QOS_L3VPN_100M", rd="65000:110", rt_import="65000:110",
         rt_export="65000:110", pe_asn=65000, ce_asn=65110,
-        access=AccessHop("S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
-        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GigabitEthernet1/0/24", "GigabitEthernet1/0/25"),),
-        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0"),
+        access=AccessHop("S1-CISCO-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
+        transits=(TransitHop("S2-HUAWEI-TEST", "huawei", IPv4Address("192.168.56.102"), "GE1/0/24", "GE1/0/23"),),
+        provider_edge=ProviderEdgeHop("PE2-HUAWEI-TEST", "huawei", IPv4Address("192.168.56.103"), "GE0/0/1"),
     )
     assert json_raw == yaml_raw
     assert set(json_raw) == {
@@ -82,10 +82,10 @@ def test_l2vpn_json_yaml_examples_match_the_approved_inventory_circuit() -> None
         qos_policy_name="QOS_L2VPN_100M", pw_id=310, evi_id=310,
         local_ac_id=3101, remote_ac_id=3102, rd="65000:310",
         rt_import="65000:310", rt_export="65000:310",
-        remote_pe_node_id="PE1-TEST", remote_pe_ip=IPv4Address("10.255.0.1"),
-        access=AccessHop("S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
-        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GigabitEthernet1/0/24", "GigabitEthernet1/0/25"),),
-        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0"),
+        remote_pe_node_id="PE1-CISCO-TEST", remote_pe_ip=IPv4Address("10.255.0.1"),
+        access=AccessHop("S1-CISCO-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
+        transits=(TransitHop("S2-HUAWEI-TEST", "huawei", IPv4Address("192.168.56.102"), "GE1/0/24", "GE1/0/23"),),
+        provider_edge=ProviderEdgeHop("PE2-HUAWEI-TEST", "huawei", IPv4Address("192.168.56.103"), "GE0/0/1"),
     )
     assert json_raw == yaml_raw
     assert set(json_raw) == {

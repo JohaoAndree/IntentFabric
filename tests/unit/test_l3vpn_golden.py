@@ -12,17 +12,17 @@ from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_ROUTES = (("S3-9306-TEST", "PE2-TEST"), ("S3-4505-TEST", "PE1-TEST"))
+_ROUTES = (("S1-CISCO-TEST", "PE2-HUAWEI-TEST"), ("S1-HUAWEI-TEST", "PE1-CISCO-TEST"))
 
 
 def _reference_intent(access_node_id: str, pe_node_id: str) -> L3VpnIntent:
     raw = dict(load_intent_mapping(_PROJECT_ROOT / "examples/intents/l3vpn_valid.json"))
-    if access_node_id == "S3-4505-TEST":
+    if access_node_id == "S1-HUAWEI-TEST":
         raw.update(
             description="L3VPN-CORP-000002", vlan_id=210, wan_network="172.16.20.0/30",
             bandwidth_mbps=200, qos_policy="QOS_L3VPN_200M", rd="65000:210", ce_asn=65210,
             access_node_id=access_node_id, pe_node_id=pe_node_id,
-            access_interface="GigabitEthernet0/0/1",
+            access_interface="GE1/0/1",
         )
     return build_plugin_catalog().parse_intent(raw)
 
@@ -41,7 +41,7 @@ def test_generation_matches_golden_bytes_and_hashes_for_every_vendor_path(
     assert plan.to_dict() == repeated.to_dict()
     assert len(plan.artifacts) == 3
     example = _PROJECT_ROOT / "examples/intents/l3vpn_valid"
-    if access_node_id == "S3-9306-TEST":
+    if access_node_id == "S1-CISCO-TEST":
         for suffix in ("json", "yaml"):
             equivalent = build_plugin_catalog().parse_intent(load_intent_mapping(example.with_suffix(f".{suffix}")))
             assert generator.generate(equivalent, operation=operation) == plan
@@ -61,8 +61,8 @@ def test_generation_matches_golden_bytes_and_hashes_for_every_vendor_path(
         )
         assert artifact.commands == expected_commands
         assert artifact.template_key == TemplateKey("L3VPN", operation, intent.hops[index].role)
-    expected_ids = (("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST") if access_node_id == "S3-9306-TEST"
-                    else ("S3-4505-TEST", "S1-4505-TEST", "PE1-TEST"))
+    expected_ids = (("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE2-HUAWEI-TEST") if access_node_id == "S1-CISCO-TEST"
+                    else ("S1-HUAWEI-TEST", "S2-CISCO-TEST", "PE1-CISCO-TEST"))
     assert tuple(artifact.node_id for artifact in plan.artifacts) == expected_ids
     hash_input = "|".join(f"{artifact.hop_index}:{artifact.node_id}:{artifact.sha256}" for artifact in plan.artifacts)
     assert plan.plan_sha256 == sha256(hash_input.encode("utf-8")).hexdigest()
@@ -148,12 +148,12 @@ def test_teardown_removes_vrf_family_interface_and_qos_in_approved_order(
     rendered = build_generator().generate(intent, operation=Operation.TEARDOWN).artifacts[-1].rendered_text
     if intent.provider_edge.vendor == "cisco":
         removals = (
-            " no address-family ipv4 vrf VRF_CORP_A", "no interface GigabitEthernet0/0/4.210",
+            " no address-family ipv4 vrf VRF_CORP_A", "no interface GigabitEthernet0/0/1.210",
             "no policy-map QOS_L3VPN_200M", "no vrf definition VRF_CORP_A",
         )
     else:
         removals = (
-            " undo ipv4-family vpn-instance VRF_CORP_A", "undo interface GigabitEthernet0/0/0.110",
+            " undo ipv4-family vpn-instance VRF_CORP_A", "undo interface GE0/0/1.110",
             "undo traffic policy QOS_L3VPN_100M", "undo traffic behavior QOS_L3VPN_100M_BEHAVIOR",
             "undo traffic classifier QOS_L3VPN_100M_CLASS", "undo ip vpn-instance VRF_CORP_A",
         )

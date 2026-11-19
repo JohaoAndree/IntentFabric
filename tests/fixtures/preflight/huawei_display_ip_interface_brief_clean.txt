@@ -1,0 +1,3 @@
+Interface            IP Address/Mask    Physical   Protocol  VPN
+GE0/0/1              unassigned         up         up        --
+10GE0/0/0            unassigned         up         up        --

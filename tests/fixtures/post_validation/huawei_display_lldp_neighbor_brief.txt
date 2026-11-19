@@ -1,2 +1,2 @@
-Local Intf Neighbor Dev Neighbor Intf Exptime(s)
-GE1/0/24 SW-LAB GE1/0/10 111
+Local Interface Exptime(s) Neighbor Interface Neighbor Device
+GE1/0/24 111 GE1/0/10 SW-LAB

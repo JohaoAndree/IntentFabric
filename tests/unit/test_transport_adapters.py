@@ -1,5 +1,6 @@
 """Garantiza contratos de transporte, confirmacion y fallos sin abrir sockets."""
 
+from dataclasses import replace
 import builtins
 from typing import Any
 from unittest.mock import MagicMock
@@ -16,24 +17,32 @@ from intentfabric.domain import (
 )
 
 
-def _node(node_id: str = "PE2-TEST") -> TopologyNode:
-    return load_default_topology().get_node(node_id)
+def _node(node_id: str = "PE2-HUAWEI-TEST", os_family: OsFamily | None = None) -> TopologyNode:
+    node = load_default_topology().get_node(node_id)
+    return replace(node, os_family=os_family) if os_family is not None else node
 
 
-def _netmiko(node_id: str = "PE2-TEST") -> tuple[NetmikoTransportAdapter, MagicMock, MagicMock, TopologyNode]:
+def _netmiko(
+    node_id: str = "PE2-HUAWEI-TEST", os_family: OsFamily | None = None,
+) -> tuple[NetmikoTransportAdapter, MagicMock, MagicMock, TopologyNode]:
     factory = MagicMock()
     connection = factory.return_value.__enter__.return_value
     connection.send_command.return_value = "operational\r\n"
     connection.send_config_set.return_value = "configured\r\n"
     connection.commit.return_value = "committed\r\n"
     credentials = DeviceCredentials("lab-user", "lab-password", "lab-secret", 2222, 40)
-    return NetmikoTransportAdapter(credentials, connect_factory=factory), factory, connection, _node(node_id)
+    return NetmikoTransportAdapter(credentials, connect_factory=factory), factory, connection, _node(node_id, os_family)
 
 
-@pytest.mark.parametrize("node_id", ["PE1-TEST", "S1-9306-TEST", "PE2-TEST"])
-def test_transport_commit_is_exclusive_to_vrpv8(node_id: str) -> None:
+@pytest.mark.parametrize(("node_id", "override"), [
+    ("PE1-CISCO-TEST", None),
+    ("S2-HUAWEI-TEST", None),
+    ("PE2-HUAWEI-TEST", None),
+    ("PE2-HUAWEI-TEST", OsFamily.HUAWEI_VRPV8),
+])
+def test_transport_commit_is_exclusive_to_vrpv8(node_id: str, override: OsFamily | None) -> None:
     """Confirma unicamente VRPv8 y conserva comandos y transcripciones normalizadas."""
-    adapter, factory, connection, node = _netmiko(node_id)
+    adapter, factory, connection, node = _netmiko(node_id, override)
     expected = node.os_family == OsFamily.HUAWEI_VRPV8
     commands = ("vlan 210",)
     output, committed = adapter.push_configuration(node, commands)
@@ -77,7 +86,7 @@ def test_injected_connection_does_not_import_netmiko(monkeypatch: pytest.MonkeyP
     adapter, factory, connection, node = _netmiko()
     monkeypatch.setattr(builtins, "__import__", guarded_import)
     assert adapter.execute_show(node, "display vlan") == "operational\n"
-    assert adapter.push_configuration(node, ("vlan 210",))[1] is True
+    assert adapter.push_configuration(node, ("vlan 210",))[1] is False
 
 
 def test_default_factory_resolves_connecthandler_only_when_connecting(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -95,7 +104,7 @@ def test_default_factory_resolves_connecthandler_only_when_connecting(monkeypatc
 @pytest.mark.parametrize("method", ["show", "config", "commit"])
 def test_netmiko_cli_rejection_preserves_transcript_and_prevents_success(method: str) -> None:
     """Propaga rechazos operativos, de configuracion y de commit con su evidencia."""
-    adapter, factory, connection, node = _netmiko()
+    adapter, factory, connection, node = _netmiko(os_family=OsFamily.HUAWEI_VRPV8)
     target = {"show": connection.send_command, "config": connection.send_config_set, "commit": connection.commit}
     target[method].return_value = "Error: rejected\r\n"
     with pytest.raises(CliCommandRejectedError) as caught:
@@ -113,7 +122,7 @@ def test_netmiko_cli_rejection_preserves_transcript_and_prevents_success(method:
 
 def test_commit_rejection_is_detected_without_a_configuration_trailing_newline() -> None:
     """Detecta rechazos de commit independientemente del terminador de la salida previa."""
-    adapter, factory, connection, node = _netmiko()
+    adapter, factory, connection, node = _netmiko(os_family=OsFamily.HUAWEI_VRPV8)
     connection.send_config_set.return_value = "configured"
     connection.commit.return_value = "Error: rejected"
     with pytest.raises(CliCommandRejectedError) as caught:
@@ -123,7 +132,7 @@ def test_commit_rejection_is_detected_without_a_configuration_trailing_newline()
 
 def test_netmiko_native_commit_value_error_is_wrapped() -> None:
     """Traduce el ValueError que Netmiko puede emitir al fallar un commit Huawei."""
-    adapter, factory, connection, node = _netmiko()
+    adapter, factory, connection, node = _netmiko(os_family=OsFamily.HUAWEI_VRPV8)
     failure = ValueError("lab commit failure")
     connection.commit.side_effect = failure
     with pytest.raises(DeviceTransportError) as caught:
@@ -136,7 +145,7 @@ def test_netmiko_native_commit_value_error_is_wrapped() -> None:
 @pytest.mark.parametrize("method", ["connect", "show", "config", "commit", "exit"])
 def test_netmiko_wraps_transport_failures_and_closes_open_sessions(method: str) -> None:
     """Traduce fallos de conexion y de interaccion conservando la causa."""
-    adapter, factory, connection, node = _netmiko()
+    adapter, factory, connection, node = _netmiko(os_family=OsFamily.HUAWEI_VRPV8)
     target = {
         "connect": factory, "show": connection.send_command,
         "config": connection.send_config_set, "commit": connection.commit,
@@ -178,9 +187,9 @@ def test_simulated_outputs_fallback_updates_and_history_are_deterministic() -> N
     snapshot = adapter.history
     adapter.set_show_output(node.node_id, " display vlan ", "updated\r\n")
     assert adapter.execute_show(node, " display vlan ") == "updated\n"
-    assert adapter.execute_show(_node("S1-9306-TEST"), "display vlan") == "default\n"
+    assert adapter.execute_show(_node("S2-HUAWEI-TEST"), "display vlan") == "default\n"
     assert adapter.execute_show(node, "display bgp peer") == ""
-    assert adapter.push_configuration(node, ("vlan 210",)) == ("vlan 210\n", True)
+    assert adapter.push_configuration(node, ("vlan 210",)) == ("vlan 210\n", False)
     assert len(snapshot) == 1
     assert [record.mode for record in adapter.history] == ["show", "show", "show", "show", "config"]
     assert all(not record.committed for record in adapter.history[:-1])
@@ -213,7 +222,7 @@ def test_simulated_command_failure_takes_precedence_over_node_failure() -> None:
 
 
 @pytest.mark.parametrize("method", ["show", "config"])
-@pytest.mark.parametrize("node_id,output", [("PE1-TEST", "% Invalid input"), ("PE2-TEST", "Error: rejected")])
+@pytest.mark.parametrize("node_id,output", [("PE1-CISCO-TEST", "% Invalid input"), ("PE2-HUAWEI-TEST", "Error: rejected")])
 def test_simulated_cli_rejections_are_not_successful(method: str, node_id: str, output: str) -> None:
     """Detecta rechazos de ambos vendors sin agregar registros de exito."""
     node = _node(node_id)

@@ -11,7 +11,7 @@ policy-map QOS_L3VPN_200M
  class class-default
   police rate 200000000 bps peak-rate 200000000 bps
 !
-interface GigabitEthernet0/0/4.210
+interface GigabitEthernet0/0/1.210
  description L3VPN-CORP-000002
  encapsulation dot1Q 210
  vrf forwarding VRF_CORP_A

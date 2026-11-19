@@ -20,8 +20,8 @@ def _raw() -> dict[str, object]:
     return {
         "service_type": "L2VPN", "description": "L2VPN-CORP-000001", "vlan_id": 310,
         "bandwidth_mbps": 100, "qos_policy": "QOS_L2VPN_100M", "pw_id": 310,
-        "access_node_id": "S3-9306-TEST", "access_interface": "Gi1/0/1",
-        "pe_node_id": "PE2-TEST", "remote_pe_node_id": "PE1-TEST",
+        "access_node_id": "S1-CISCO-TEST", "access_interface": "Gi1/0/1",
+        "pe_node_id": "PE2-HUAWEI-TEST", "remote_pe_node_id": "PE1-CISCO-TEST",
     }
 
 
@@ -35,10 +35,10 @@ def test_parser_resolves_mixed_route_remote_loopback_and_defaults_without_mutati
     original = raw.copy()
     intent = _parse(raw)
     assert raw == original
-    assert tuple(hop.node_id for hop in intent.hops) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
+    assert tuple(hop.node_id for hop in intent.hops) == ("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE2-HUAWEI-TEST")
     assert tuple(hop.vendor for hop in intent.hops) == ("cisco", "huawei", "huawei")
     assert intent.access.customer_port == "GigabitEthernet1/0/1"
-    assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/0"
+    assert intent.provider_edge.parent_interface == "GE0/0/1"
     assert intent.remote_pe_ip == IPv4Address("10.255.0.1")
     assert intent.evi_id == intent.local_ac_id == intent.remote_ac_id == intent.pw_id == 310
     assert intent.rd == intent.rt_import == intent.rt_export == "65000:310"
@@ -148,7 +148,7 @@ def test_parser_requires_mapping_topology_and_known_fields() -> None:
 @pytest.mark.parametrize(("field", "value"), (
     ("access_node_id", "missing"), ("pe_node_id", "missing"),
     ("access_interface", "Gi1/0/99"), ("access_interface", "Gi1/0/10"),
-    ("client_interface", "Gi1/0/10"), ("pe_node_id", "PE1-TEST"),
+    ("client_interface", "Gi1/0/10"), ("pe_node_id", "PE1-CISCO-TEST"),
 ))
 def test_topology_failures_keep_input_field_and_cause(field: str, value: str) -> None:
     """Mapea errores de ruta al campo original conservando la causa topologica."""
@@ -161,10 +161,10 @@ def test_topology_failures_keep_input_field_and_cause(field: str, value: str) ->
 
 
 @pytest.mark.parametrize(("changes", "message"), (
-    ({"remote_pe_node_id": "PE2-TEST"}, "remote_pe_node_id: debe ser distinto de pe_node_id"),
+    ({"remote_pe_node_id": "PE2-HUAWEI-TEST"}, "remote_pe_node_id: debe ser distinto de pe_node_id"),
     ({"remote_pe_node_id": "missing"}, "remote_pe_node_id: TOPOLOGY_NODE_NOT_FOUND; nodo inexistente 'missing'"),
-    ({"remote_pe_node_id": "S1-9306-TEST"}, "remote_pe_node_id: TOPOLOGY_INVALID_ENDPOINT_ROLE; 'S1-9306-TEST' no es un PE con loopback0_ip"),
-    ({"remote_pe_ip": "10.255.0.2"}, "remote_pe_ip: IP 10.255.0.2 no coincide con loopback0_ip de PE1-TEST (10.255.0.1)"),
+    ({"remote_pe_node_id": "S2-HUAWEI-TEST"}, "remote_pe_node_id: TOPOLOGY_INVALID_ENDPOINT_ROLE; 'S2-HUAWEI-TEST' no es un PE con loopback0_ip"),
+    ({"remote_pe_ip": "10.255.0.2"}, "remote_pe_ip: IP 10.255.0.2 no coincide con loopback0_ip de PE1-CISCO-TEST (10.255.0.1)"),
 ))
 def test_remote_endpoint_failures_match_exact_contract(changes: dict[str, object], message: str) -> None:
     """Rechaza PE local, inexistente, de otro rol o con IP discordante."""
@@ -176,13 +176,13 @@ def test_defaults_follow_inventory_asn_and_resolved_route() -> None:
     """Deriva RD y RT desde el ASN inventariado y resuelve la ruta inversa mixta."""
     topology = load_default_topology()
     topology = replace(topology, nodes=tuple(
-        replace(node, asn=65100) if node.node_id == "PE2-TEST" else node for node in topology.nodes
+        replace(node, asn=65100) if node.node_id == "PE2-HUAWEI-TEST" else node for node in topology.nodes
     ))
     intent = parse_l2vpn_intent(_raw(), topology=topology)
     assert intent.rd == intent.rt_import == intent.rt_export == "65100:310"
     reverse = _parse(_raw() | {
-        "access_node_id": "S3-4505-TEST", "access_interface": "GE0/0/1",
-        "pe_node_id": "PE1-TEST", "remote_pe_node_id": "PE2-TEST",
+        "access_node_id": "S1-HUAWEI-TEST", "access_interface": "GE1/0/1",
+        "pe_node_id": "PE1-CISCO-TEST", "remote_pe_node_id": "PE2-HUAWEI-TEST",
     })
     assert tuple(hop.vendor for hop in reverse.hops) == ("huawei", "cisco", "cisco")
     assert reverse.remote_pe_ip == IPv4Address("10.255.0.2")
@@ -224,10 +224,10 @@ def test_context_preserves_exact_variables_for_every_hop_and_operation() -> None
             else:
                 expected.update(
                     pe_interface=hop.parent_interface, parent_interface=hop.parent_interface,
-                    pe_subinterface="GigabitEthernet0/0/0.310", qos_policy="QOS_L2VPN_100M",
+                    pe_subinterface="GE0/0/1.310", qos_policy="QOS_L2VPN_100M",
                     bandwidth_mbps=100, pw_id=310, evi_id=310, local_ac_id=310, remote_ac_id=310,
                     instance_name="VPWS_310", rd="65000:310", rt_import="65000:310", rt_export="65000:310",
-                    remote_pe_node_id="PE1-TEST", remote_pe_ip="10.255.0.1",
+                    remote_pe_node_id="PE1-CISCO-TEST", remote_pe_ip="10.255.0.1",
                 )
             assert build_l2vpn_hop_context(intent, index, operation) == expected
 

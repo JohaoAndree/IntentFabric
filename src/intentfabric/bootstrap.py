@@ -224,7 +224,7 @@ def build_simulated_transport_for_intent(
         else {}
     )
     pe = intent.provider_edge
-    interface_command = "show ip interface brief" if pe.vendor == "cisco" else "display interface brief"
+    interface_command = "show ip interface brief" if pe.vendor == "cisco" else "display ip interface brief"
     return _IntentSimulatedTransport(clean_outputs, operational_outputs, (pe.node_id, interface_command))
 
 
@@ -247,7 +247,7 @@ def _simulated_clean_outputs(
                 "-------------------------------------------------------------------------------\n"
             )
             vlan_row = ("1    default                          active    Gi1/0/1\n" if cisco
-                        else "1    common  UT:GE0/0/1(U)\n")
+                        else "1    common  UT:GE1/0/1(U)\n")
             clean_outputs[node.node_id, vlan_command] = vlan_header + (vlan_row if intent.vlan_id != 1 else "")
         if node.node_id == intent.access.node_id:
             access = intent.access
@@ -262,10 +262,10 @@ def _simulated_clean_outputs(
                 )
         if node.node_id == intent.provider_edge.node_id:
             pe = intent.provider_edge
-            interface_command = "show ip interface brief" if cisco else "display interface brief"
+            interface_command = "show ip interface brief" if cisco else "display ip interface brief"
             clean_outputs[node.node_id, interface_command] = (
                 f"{pe.parent_interface} unassigned YES NVRAM administratively down down\n" if cisco
-                else f"{pe.parent_interface} down down 0% 0% 0 0\n"
+                else f"{pe.parent_interface} unassigned up up --\n"
             )
             if isinstance(intent, DiaIntent):
                 vrf_command = "show vrf" if cisco else "display ip vpn-instance"
@@ -289,26 +289,26 @@ def _simulated_operational_outputs(
         ports = [port for node_id, port in expected.expected_lldp_ports if node_id == node.node_id]
         lldp_command = "show lldp neighbors" if cisco else "display lldp neighbor brief"
         operational_outputs[node.node_id, lldp_command] = "".join(
-            f"SW-LAB {port} 150 R Gi1/0/24\n" if cisco else f"{port} SW-LAB GE1/0/10 111\n"
+            f"SW-LAB {port} 150 R Gi1/0/24\n" if cisco else f"{port} 111 GE1/0/10 SW-LAB\n"
             for port in ports
         )
         if node.node_id in expected.l2_node_ids:
             vlan_command = "show vlan brief" if cisco else "display vlan"
-            vlan_row = "{vlan} default active Gi1/0/1\n" if cisco else "{vlan} common UT:GE0/0/1(U)\n"
+            vlan_row = "{vlan} default active Gi1/0/1\n" if cisco else "{vlan} common UT:GE1/0/1(U)\n"
             operational_outputs[node.node_id, vlan_command] = vlan_row.format(vlan=intent.vlan_id)
             mac_command = (f"show mac address-table vlan {intent.vlan_id}" if cisco
                            else f"display mac-address vlan {intent.vlan_id}")
             operational_outputs[node.node_id, mac_command] = (
                 f"{intent.vlan_id} 0200.0000.0001 DYNAMIC {ports[0]}\n" if cisco
-                else f"0200-0000-0001 {intent.vlan_id}/- {ports[0]} dynamic\n"
+                else f"0200-0000-0001 {intent.vlan_id}/-/- {ports[0]} dynamic -\n"
             )
     access = intent.access
     pe = intent.provider_edge
     cisco = pe.vendor == "cisco"
-    interface_command = "show ip interface brief" if cisco else "display interface brief"
+    interface_command = "show ip interface brief" if cisco else "display ip interface brief"
     operational_outputs[pe.node_id, interface_command] = (
         f"{expected.pe_subinterface} {expected.ping_target_ip or '192.0.2.1'} YES manual up up\n" if cisco
-        else f"{expected.pe_subinterface} up up(s) 0% 0% 0 0\n"
+        else f"{expected.pe_subinterface} {expected.ping_target_ip or 'unassigned'} up up(s) --\n"
     )
     if isinstance(intent, L2VpnIntent):
         operational_outputs.update(_simulated_circuit_outputs(intent, expected.variant))

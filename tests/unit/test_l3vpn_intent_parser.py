@@ -21,8 +21,8 @@ def _raw() -> dict[str, object]:
         "wan_network": "172.16.10.0/30", "bandwidth_mbps": 100,
         "vrf_name": "VRF_CORP_A", "qos_policy": "QOS_L3VPN_100M",
         "rd": "65000:110", "rt_import": "65000:110", "rt_export": "65000:110",
-        "ce_asn": 65110, "access_node_id": "S3-9306-TEST",
-        "access_interface": "Gi1/0/1", "pe_node_id": "PE2-TEST",
+        "ce_asn": 65110, "access_node_id": "S1-CISCO-TEST",
+        "access_interface": "Gi1/0/1", "pe_node_id": "PE2-HUAWEI-TEST",
     }
 
 
@@ -39,10 +39,10 @@ def test_parser_resolves_mixed_route_asn_and_symmetric_targets_without_mutation(
     assert intent.pe_asn == 65000
     assert intent.ce_asn == 65110
     assert intent.lan_network is None
-    assert tuple(hop.node_id for hop in intent.hops) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
+    assert tuple(hop.node_id for hop in intent.hops) == ("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE2-HUAWEI-TEST")
     assert tuple(hop.vendor for hop in intent.hops) == ("cisco", "huawei", "huawei")
     assert intent.access.customer_port == "GigabitEthernet1/0/1"
-    assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/0"
+    assert intent.provider_edge.parent_interface == "GE0/0/1"
     symmetric = {key: value for key, value in raw.items() if key not in ("rt_import", "rt_export")}
     assert _parse(symmetric | {"route_target": "65000:110"}) == intent
     assert _parse(raw | {"rt_export": "65000:210"}).rt_export == "65000:210"
@@ -128,11 +128,11 @@ def test_inventory_asn_must_be_usable_and_explicit_asn_must_match() -> None:
     """Exige ASN inventariado valido y coincidencia exacta si se declara en la intencion."""
     raw = _raw()
     assert _parse(raw | {"pe_asn": None}) == _parse(raw | {"pe_asn": 65000}) == _parse(raw)
-    with pytest.raises(IntentParseError, match=r"^pe_asn: ASN 65001 no coincide con el inventario de PE2-TEST \(65000\)$"):
+    with pytest.raises(IntentParseError, match=r"^pe_asn: ASN 65001 no coincide con el inventario de PE2-HUAWEI-TEST \(65000\)$"):
         _parse(raw | {"pe_asn": 65001})
     topology = load_default_topology()
     reserved_asn = replace(topology, nodes=tuple(
-        replace(node, asn=4294967295) if node.node_id == "PE2-TEST" else node for node in topology.nodes
+        replace(node, asn=4294967295) if node.node_id == "PE2-HUAWEI-TEST" else node for node in topology.nodes
     ))
     for overrides in ({}, {"pe_asn": 65000}):
         with pytest.raises(IntentParseError, match="^pe_asn:"):
@@ -174,8 +174,8 @@ def test_context_preserves_all_hop_fields_and_optional_lan_without_vendor_qos() 
         assert contexts[1]["ingress_interface"] == contexts[1]["downstream_interface"] == intent.transits[0].downstream_interface
         assert contexts[1]["egress_interface"] == contexts[1]["upstream_interface"] == intent.transits[0].upstream_interface
         assert contexts[2].items() >= {
-            "pe_interface": "GigabitEthernet0/0/0", "parent_interface": "GigabitEthernet0/0/0",
-            "pe_subinterface": "GigabitEthernet0/0/0.110", "vrf_name": "VRF_CORP_A",
+            "pe_interface": "GE0/0/1", "parent_interface": "GE0/0/1",
+            "pe_subinterface": "GE0/0/1.110", "vrf_name": "VRF_CORP_A",
             "rd": "65000:110", "rt_import": "65000:110", "rt_export": "65000:110",
             "pe_asn": 65000, "ce_asn": 65110, "qos_policy": "QOS_L3VPN_100M",
             "bandwidth_mbps": 100, "wan_network": "172.16.10.0/30",

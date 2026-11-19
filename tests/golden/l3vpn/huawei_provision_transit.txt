@@ -1,9 +1,9 @@
 vlan 110
  description L3VPN-CORP-000001
 quit
-interface GigabitEthernet1/0/24
+interface GE1/0/24
  port trunk allow-pass vlan 110
 quit
-interface GigabitEthernet1/0/25
+interface GE1/0/23
  port trunk allow-pass vlan 110
 quit

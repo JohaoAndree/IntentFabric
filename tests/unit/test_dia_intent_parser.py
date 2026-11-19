@@ -20,8 +20,8 @@ def valid_raw() -> dict[str, Any]:
         "service_type": "DIA", "description": "TEST-0000000001", "vlan_id": 10,
         "vrf_name": "TEST-INTERNET", "wan_subnet": "192.168.10.0/30",
         "lan_subnet": "10.50.1.8/29", "bandwidth_mbps": 100,
-        "qos_policy_name": "TEST_POLICY", "access_node_id": "S3-9306-TEST",
-        "access_interface": "Gi1/0/1", "pe_node_id": "PE2-TEST",
+        "qos_policy_name": "TEST_POLICY", "access_node_id": "S1-CISCO-TEST",
+        "access_interface": "Gi1/0/1", "pe_node_id": "PE2-HUAWEI-TEST",
     }
 
 
@@ -43,14 +43,14 @@ def test_parser_preserves_data_and_does_not_mutate_input(valid_raw: dict[str, An
     assert intent.lan_network == IPv4Network("10.50.1.8/29")
     assert intent.bandwidth_mbps == 100
     assert intent.qos_policy_name == "TEST_POLICY"
-    assert tuple(hop.node_id for hop in intent.hops) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
+    assert tuple(hop.node_id for hop in intent.hops) == ("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE2-HUAWEI-TEST")
     assert tuple(hop.vendor for hop in intent.hops) == ("cisco", "huawei", "huawei")
     assert intent.access.management_ip == IPv4Address("192.168.56.101")
     assert intent.access.customer_port == "GigabitEthernet1/0/1"
     assert intent.access.uplink_interface == "GigabitEthernet1/0/10"
-    assert intent.transits[0].downstream_interface == "GigabitEthernet1/0/24"
-    assert intent.transits[0].upstream_interface == "GigabitEthernet1/0/25"
-    assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/0"
+    assert intent.transits[0].downstream_interface == "GE1/0/24"
+    assert intent.transits[0].upstream_interface == "GE1/0/23"
+    assert intent.provider_edge.parent_interface == "GE0/0/1"
 
 
 @pytest.mark.parametrize("service_type", ("DIA", "dia", " Dia "))
@@ -118,12 +118,12 @@ def test_parser_requires_exact_scalar_types(
 @pytest.mark.parametrize(("field", "value", "code"), (
     ("access_node_id", "absent", "TOPOLOGY_NODE_NOT_FOUND"),
     ("pe_node_id", "absent", "TOPOLOGY_NODE_NOT_FOUND"),
-    ("access_node_id", "S1-9306-TEST", "TOPOLOGY_INVALID_NODE_ROLE"),
-    ("pe_node_id", "S1-9306-TEST", "TOPOLOGY_INVALID_NODE_ROLE"),
+    ("access_node_id", "S2-HUAWEI-TEST", "TOPOLOGY_INVALID_NODE_ROLE"),
+    ("pe_node_id", "S2-HUAWEI-TEST", "TOPOLOGY_INVALID_NODE_ROLE"),
     ("access_interface", "invalid", "TOPOLOGY_INTERFACE_NOT_FOUND"),
     ("access_interface", "Gi1/0/99", "TOPOLOGY_INTERFACE_NOT_FOUND"),
     ("access_interface", "Gi1/0/10", "TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK"),
-    ("pe_node_id", "PE1-TEST", "TOPOLOGY_PATH_NOT_FOUND"),
+    ("pe_node_id", "PE1-CISCO-TEST", "TOPOLOGY_PATH_NOT_FOUND"),
 ))
 def test_resolution_errors_preserve_field_and_reason(
     valid_raw: dict[str, Any], field: str, value: str, code: str,
