@@ -25,10 +25,10 @@ def test_json_and_yaml_examples_produce_same_reference_intent() -> None:
         ),
         transits=(TransitHop(
             "S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"),
-            "GigabitEthernet1/0/24", "GigabitEthernet1/0/25",
+            "GE1/0/24", "GE1/0/23",
         ),),
         provider_edge=ProviderEdgeHop(
-            "PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0",
+            "PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GE0/0/1",
         ),
     )
     assert json_raw == yaml_raw
@@ -59,8 +59,8 @@ def test_l3vpn_json_yaml_examples_match_the_approved_inventory_endpoint() -> Non
         qos_policy_name="QOS_L3VPN_100M", rd="65000:110", rt_import="65000:110",
         rt_export="65000:110", pe_asn=65000, ce_asn=65110,
         access=AccessHop("S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
-        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GigabitEthernet1/0/24", "GigabitEthernet1/0/25"),),
-        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0"),
+        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GE1/0/24", "GE1/0/23"),),
+        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GE0/0/1"),
     )
     assert json_raw == yaml_raw
     assert set(json_raw) == {
@@ -84,8 +84,8 @@ def test_l2vpn_json_yaml_examples_match_the_approved_inventory_circuit() -> None
         rt_import="65000:310", rt_export="65000:310",
         remote_pe_node_id="PE1-TEST", remote_pe_ip=IPv4Address("10.255.0.1"),
         access=AccessHop("S3-9306-TEST", "cisco", IPv4Address("192.168.56.101"), "GigabitEthernet1/0/1", "GigabitEthernet1/0/10"),
-        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GigabitEthernet1/0/24", "GigabitEthernet1/0/25"),),
-        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GigabitEthernet0/0/0"),
+        transits=(TransitHop("S1-9306-TEST", "huawei", IPv4Address("192.168.56.102"), "GE1/0/24", "GE1/0/23"),),
+        provider_edge=ProviderEdgeHop("PE2-TEST", "huawei", IPv4Address("192.168.56.103"), "GE0/0/1"),
     )
     assert json_raw == yaml_raw
     assert set(json_raw) == {

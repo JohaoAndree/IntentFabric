@@ -12,38 +12,38 @@ nodes:
       - GigabitEthernet1/0/10
   - node_id: S1-9306-TEST
     hostname: S1-9306-TEST
-    model: S5735-L24P4XE
+    model: S5735-L24P4XE-A-V2
     vendor: huawei
     os_family: huawei
     role: transit
     management_ip: 192.168.56.102
     interfaces:
-      - GigabitEthernet1/0/24
-      - GigabitEthernet1/0/25
+      - GE1/0/23
+      - GE1/0/24
   - node_id: PE2-TEST
     hostname: PE2-TEST
     model: AR5710-S8T2XE
     vendor: huawei
-    os_family: huawei_vrpv8
+    os_family: huawei
     role: pe
     management_ip: 192.168.56.103
     loopback0_ip: 10.255.0.2
     asn: 65000
     interfaces:
-      - GigabitEthernet0/0/0
-      - GigabitEthernet0/0/1
+      - GE0/0/1
+      - 10GE0/0/0
       - Loopback0
   - node_id: S3-4505-TEST
     hostname: S3-4505-TEST
-    model: S5735-L24P4XE
+    model: S5735-L24P4XE-A-V2
     vendor: huawei
     os_family: huawei
     role: access
     management_ip: 192.168.56.104
     interfaces:
-      - GigabitEthernet0/0/1
-      - GigabitEthernet0/0/2
-      - GigabitEthernet0/0/8
+      - GE1/0/1
+      - GE1/0/2
+      - GE1/0/8
   - node_id: S1-4505-TEST
     hostname: S1-4505-TEST
     model: C9300L-24T-4G
@@ -72,13 +72,13 @@ links:
   - source_node_id: S3-9306-TEST
     source_interface: GigabitEthernet1/0/10
     target_node_id: S1-9306-TEST
-    target_interface: GigabitEthernet1/0/24
+    target_interface: GE1/0/24
   - source_node_id: S1-9306-TEST
-    source_interface: GigabitEthernet1/0/25
+    source_interface: GE1/0/23
     target_node_id: PE2-TEST
-    target_interface: GigabitEthernet0/0/0
+    target_interface: GE0/0/1
   - source_node_id: S3-4505-TEST
-    source_interface: GigabitEthernet0/0/8
+    source_interface: GE1/0/8
     target_node_id: S1-4505-TEST
     target_interface: GigabitEthernet1/0/11
   - source_node_id: S1-4505-TEST
@@ -88,4 +88,4 @@ links:
   - source_node_id: PE1-TEST
     source_interface: GigabitEthernet0/0/0
     target_node_id: PE2-TEST
-    target_interface: GigabitEthernet0/0/1
+    target_interface: 10GE0/0/0

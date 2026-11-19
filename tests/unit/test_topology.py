@@ -29,9 +29,9 @@ def test_lab_catalog_preserves_all_nodes_links_and_metadata() -> None:
     )
     expected = (
         ("S3-9306-TEST", "cisco", "C9300L-24T-4G", "access", "192.168.56.101", "cisco_xe"),
-        ("S1-9306-TEST", "huawei", "S5735-L24P4XE", "transit", "192.168.56.102", "huawei"),
-        ("PE2-TEST", "huawei", "AR5710-S8T2XE", "pe", "192.168.56.103", "huawei_vrpv8"),
-        ("S3-4505-TEST", "huawei", "S5735-L24P4XE", "access", "192.168.56.104", "huawei"),
+        ("S1-9306-TEST", "huawei", "S5735-L24P4XE-A-V2", "transit", "192.168.56.102", "huawei"),
+        ("PE2-TEST", "huawei", "AR5710-S8T2XE", "pe", "192.168.56.103", "huawei"),
+        ("S3-4505-TEST", "huawei", "S5735-L24P4XE-A-V2", "access", "192.168.56.104", "huawei"),
         ("S1-4505-TEST", "cisco", "C9300L-24T-4G", "transit", "192.168.56.105", "cisco_xe"),
         ("PE1-TEST", "cisco", "C8200L-1N-4T", "pe", "192.168.56.106", "cisco_xe"),
     )
@@ -55,10 +55,16 @@ def test_queries_normalize_interfaces_and_ignore_link_direction() -> None:
     assert node.has_interface("GE1/0/1.10")
     assert not node.has_interface("GE1/0/2")
     assert catalog.find_link_between("S3-9306-TEST", "S1-9306-TEST") == (
-        "GigabitEthernet1/0/10", "GigabitEthernet1/0/24",
+        "GigabitEthernet1/0/10", "GE1/0/24",
     )
     assert catalog.find_link_between("S1-9306-TEST", "S3-9306-TEST") == (
-        "GigabitEthernet1/0/24", "GigabitEthernet1/0/10",
+        "GE1/0/24", "GigabitEthernet1/0/10",
+    )
+    assert catalog.find_link_between("PE1-TEST", "PE2-TEST") == (
+        "GigabitEthernet0/0/0", "10GE0/0/0",
+    )
+    assert catalog.find_link_between("S1-9306-TEST", "PE2-TEST") == (
+        "GE1/0/23", "GE0/0/1",
     )
     assert catalog.find_link_between("S3-9306-TEST", "PE2-TEST") is None
     assert catalog.find_node("absent") is None
@@ -179,8 +185,8 @@ def test_yaml_repository_translates_missing_file_and_encoding_errors(tmp_path: P
 
 
 @pytest.mark.parametrize(("access_id", "pe_id", "transit_id", "client", "uplink", "ingress", "egress", "parent"), (
-    ("S3-9306-TEST", "PE2-TEST", "S1-9306-TEST", "Gi1/0/1", "Gi1/0/10", "GE1/0/24", "GE1/0/25", "GE0/0/0"),
-    ("S3-4505-TEST", "PE1-TEST", "S1-4505-TEST", "GE0/0/1", "GE0/0/8", "Gi1/0/11", "Gi1/0/25", "Gi0/0/4"),
+    ("S3-9306-TEST", "PE2-TEST", "S1-9306-TEST", "Gi1/0/1", "Gi1/0/10", "GE1/0/24", "GE1/0/23", "GE0/0/1"),
+    ("S3-4505-TEST", "PE1-TEST", "S1-4505-TEST", "GE1/0/1", "GE1/0/8", "Gi1/0/11", "Gi1/0/25", "Gi0/0/4"),
 ))
 def test_resolver_builds_exact_hops_for_both_lab_routes(
     access_id: str, pe_id: str, transit_id: str, client: str, uplink: str,
@@ -262,7 +268,8 @@ def test_bfs_prefers_direct_link_over_a_lexicographically_earlier_transit() -> N
         access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
     )
     assert len(hops) == 2
-    assert hops[0].uplink_interface == hops[1].parent_interface == "GigabitEthernet0/4"
+    assert hops[0].uplink_interface == "GigabitEthernet0/4"
+    assert hops[1].parent_interface == "GE0/4"
 
 
 @pytest.mark.parametrize("intermediate_role", (NodeRole.ACCESS, NodeRole.PROVIDER_EDGE))
@@ -290,8 +297,8 @@ def test_resolver_populates_multiple_transits_in_path_order() -> None:
         access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
     )
     assert tuple(hop.node_id for hop in hops) == ("S3-9306-TEST", "T-A", "T-B", "PE2-TEST")
-    assert (hops[1].downstream_interface, hops[1].upstream_interface) == ("GigabitEthernet0/1", "GigabitEthernet0/3")
-    assert (hops[2].downstream_interface, hops[2].upstream_interface) == ("GigabitEthernet0/3", "GigabitEthernet0/2")
+    assert (hops[1].downstream_interface, hops[1].upstream_interface) == ("GE0/1", "GE0/3")
+    assert (hops[2].downstream_interface, hops[2].upstream_interface) == ("GE0/3", "GE0/2")
 
 
 def test_resolver_rejects_missing_or_duplicate_interface_aliases() -> None:

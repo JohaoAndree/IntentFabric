@@ -126,9 +126,10 @@ class TopologyCatalog:
                 node = self.find_node(node_id)
                 if node is None:
                     raise TopologyValidationError(f"links: nodo inexistente {node_id!r}")
-                if interface not in node.interfaces:
-                    raise TopologyValidationError(f"links: interfaz {interface!r} inexistente en {node_id!r}")
-                parent, _ = split_subinterface(interface, vendor=node.vendor)
+                canonical = normalize_interface_name(interface, vendor=node.vendor)
+                if canonical not in node.interfaces:
+                    raise TopologyValidationError(f"links: interfaz {canonical!r} inexistente en {node_id!r}")
+                parent, _ = split_subinterface(canonical, vendor=node.vendor)
                 port = (node_id, parent)
                 if port in occupied_ports:
                     raise TopologyValidationError(f"links: puerto conectado mas de una vez {port!r}")
@@ -157,7 +158,19 @@ class TopologyCatalog:
         neighbors: list[tuple[str, str, str]] = []
         for link in self.links:
             if link.source_node_id == node_id:
-                neighbors.append((link.target_node_id, link.source_interface, link.target_interface))
+                source_vendor = self.get_node(link.source_node_id).vendor
+                target_vendor = self.get_node(link.target_node_id).vendor
+                neighbors.append((
+                    link.target_node_id,
+                    normalize_interface_name(link.source_interface, vendor=source_vendor),
+                    normalize_interface_name(link.target_interface, vendor=target_vendor),
+                ))
             elif link.target_node_id == node_id:
-                neighbors.append((link.source_node_id, link.target_interface, link.source_interface))
+                source_vendor = self.get_node(link.source_node_id).vendor
+                target_vendor = self.get_node(link.target_node_id).vendor
+                neighbors.append((
+                    link.source_node_id,
+                    normalize_interface_name(link.target_interface, vendor=target_vendor),
+                    normalize_interface_name(link.source_interface, vendor=source_vendor),
+                ))
         return tuple(sorted(neighbors))
