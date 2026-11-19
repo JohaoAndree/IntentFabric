@@ -16,7 +16,6 @@ from intentfabric.domain.interfaces import (
     ("Te1/0/1", "TenGigabitEthernet1/0/1", "Te1/0/1", "10GE1/0/1"),
     ("10GE1/0/1", "TenGigabitEthernet1/0/1", "Te1/0/1", "10GE1/0/1"),
     ("XGE0/0/1", "XGigabitEthernet0/0/1", "Te0/0/1", "XGE0/0/1"),
-    ("MultiGE0/0/1", "MultiGigabitEthernet0/0/1", "MultiGE0/0/1", "MultiGE0/0/1"),
     ("Fa0/1", "FastEthernet0/1", "Fa0/1", "Fa0/1"),
     ("Eth0/1", "Ethernet0/1", "Eth0/1", "Eth0/1"),
     ("Lo0", "Loopback0", "Lo0", "LoopBack0"),
@@ -53,7 +52,22 @@ def test_huawei_yunshan_native_normalization_and_vlanif_spacing() -> None:
     assert normalize_interface_name("lo0", vendor="huawei") == "Loopback0"
     assert abbreviate_interface_name("lo0", "huawei") == "LoopBack0"
     assert abbreviate_interface_name("Vlanif 999", "huawei") == "Vlanif999"
-    assert normalize_interface_name("Vlanif 999", vendor="cisco") == "Vlan999"
+    assert normalize_interface_name("MultiGE0/0/1") == "MultiGigabitEthernet0/0/1"
+    assert abbreviate_interface_name("MultiGE0/0/1", "huawei") == "MultiGE0/0/1"
+    for invalid_vendor in ("cisco", None, "Cisco", " CISCO "):
+        with pytest.raises(InvalidInterfaceNameError):
+            normalize_interface_name("Vlanif 999", vendor=invalid_vendor)
+    for cisco_variant in ("cisco", "Cisco", " CISCO "):
+        for multige in ("MultiGE0/0/1", "multigigabitethernet0/0/1", "mge0/0/1"):
+            with pytest.raises(InvalidInterfaceNameError):
+                normalize_interface_name(multige, vendor=cisco_variant)
+    with pytest.raises(InvalidInterfaceNameError):
+        abbreviate_interface_name("MultiGE0/0/1", "cisco")
+    assert normalize_interface_name("Vlanif10", vendor="Cisco") == "Vlanif10"
+    assert normalize_interface_name("Vlanif10", vendor=" CISCO ") == "Vlanif10"
+    for cisco_variant in ("Cisco", " CISCO "):
+        with pytest.raises(InvalidInterfaceNameError, match="vendor"):
+            abbreviate_interface_name("Gi0/1", cisco_variant)
 
 
 @pytest.mark.parametrize("name", (

@@ -9,7 +9,7 @@ _PREFIX_RULES = (
     (("gi", "ge", "gigabitethernet"), "GigabitEthernet", "GE", "Gi", "GE"),
     (("te", "10ge", "tengigabitethernet"), "TenGigabitEthernet", "10GE", "Te", "10GE"),
     (("xge", "xgigabitethernet"), "XGigabitEthernet", "XGE", "Te", "XGE"),
-    (("multige", "multigigabitethernet", "mge"), "MultiGigabitEthernet", "MultiGE", "MultiGE", "MultiGE"),
+    (("multige", "multigigabitethernet", "mge"), "MultiGigabitEthernet", "MultiGE", None, "MultiGE"),
     (("fa", "fastethernet"), "FastEthernet", "FastEthernet", "Fa", "Fa"),
     (("eth", "ethernet"), "Ethernet", "Ethernet", "Eth", "Eth"),
     (("lo", "loopback"), "Loopback", "Loopback", "Lo", "LoopBack"),
@@ -18,11 +18,8 @@ _PREFIX_RULES = (
 )
 
 
-def _normalize_vendor(vendor: str | None) -> str | None:
-    if not isinstance(vendor, str):
-        return None
-    normalized = vendor.strip().lower()
-    return normalized if normalized else None
+def _is_huawei(vendor: str | None) -> bool:
+    return isinstance(vendor, str) and vendor.strip().lower() == "huawei"
 
 
 def normalize_interface_name(name: str, *, vendor: str | None = None) -> str:
@@ -31,22 +28,24 @@ def normalize_interface_name(name: str, *, vendor: str | None = None) -> str:
     if match is None:
         raise InvalidInterfaceNameError(f"interface: nombre invalido {name!r}")
     prefix, spacing, indices = match.groups()
-    vendor_key = _normalize_vendor(vendor)
-    if spacing and not (prefix.lower() == "vlanif" or (vendor_key == "huawei" and prefix.lower() in ("vl", "vlan"))):
-        raise InvalidInterfaceNameError(f"interface: nombre invalido {name!r}")
-    for aliases, default_canonical, huawei_canonical, _, _ in _PREFIX_RULES:
+    is_huawei = _is_huawei(vendor)
+    for aliases, default_canonical, huawei_canonical, cisco_prefix, _ in _PREFIX_RULES:
         if prefix.lower() in aliases:
             break
     else:
+        raise InvalidInterfaceNameError(f"interface: prefijo desconocido en {name!r}")
+    if spacing and not (is_huawei and default_canonical in ("Vlan", "Vlanif")):
+        raise InvalidInterfaceNameError(f"interface: nombre invalido {name!r}")
+    if not is_huawei and cisco_prefix is None and vendor is not None:
         raise InvalidInterfaceNameError(f"interface: prefijo desconocido en {name!r}")
     if default_canonical in ("Loopback", "Vlan", "Vlanif"):
         if not indices.isdecimal():
             raise InvalidInterfaceNameError(f"interface: se requiere un entero en {name!r}")
     elif "." in indices and not 1 <= int(indices.rsplit(".", 1)[1]) <= 4094:
         raise InvalidInterfaceNameError(f"interface: subinterfaz VLAN fuera de 1..4094 en {name!r}")
-    if vendor_key == "huawei":
+    if is_huawei:
         canonical = huawei_canonical
-    elif default_canonical == "Vlanif" and vendor_key == "cisco":
+    elif default_canonical == "Vlanif" and vendor == "cisco":
         canonical = "Vlan"
     else:
         canonical = default_canonical
@@ -55,18 +54,21 @@ def normalize_interface_name(name: str, *, vendor: str | None = None) -> str:
 
 def abbreviate_interface_name(name: str, vendor: str) -> str:
     """Devuelve la abreviatura nativa del fabricante conservando los indices."""
-    vendor_key = _normalize_vendor(vendor)
-    if vendor_key not in ("cisco", "huawei"):
+    is_huawei = _is_huawei(vendor)
+    if not is_huawei and vendor != "cisco":
         raise InvalidInterfaceNameError(f"vendor: fabricante no soportado {vendor!r}")
-    normalized = normalize_interface_name(name, vendor=vendor_key)
+    normalized = normalize_interface_name(name, vendor=vendor)
     for _, default_canonical, huawei_canonical, cisco_prefix, huawei_prefix in _PREFIX_RULES:
+        if not is_huawei and cisco_prefix is None:
+            continue
         canonical = (
             huawei_canonical
-            if vendor_key == "huawei"
+            if is_huawei
             else ("Vlan" if default_canonical == "Vlanif" else default_canonical)
         )
         if normalized.startswith(canonical) and normalized[len(canonical):len(canonical) + 1].isdigit():
-            prefix = cisco_prefix if vendor_key == "cisco" else huawei_prefix
+            prefix = huawei_prefix if is_huawei else cisco_prefix
+            assert prefix is not None
             return prefix + normalized[len(canonical):]
     raise InvalidInterfaceNameError(f"interface: nombre invalido {name!r}")
 
