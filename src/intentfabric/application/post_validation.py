@@ -1,7 +1,7 @@
 """Evalua evidencias CLI y ejecuta el triage posdespliegue en orden fijo."""
 
 import re
-from ipaddress import IPv4Network
+from ipaddress import IPv4Interface, IPv4Network
 
 from intentfabric.application.preflight_online import parse_active_vlans
 from intentfabric.application.transport import DeviceTransportPort
@@ -19,8 +19,18 @@ from intentfabric.domain.post_validation import (
 from intentfabric.domain.topology import TopologyCatalog, TopologyNode
 
 
+def _is_ip_or_unassigned(token: str) -> bool:
+    if token.lower() == "unassigned":
+        return True
+    try:
+        IPv4Interface(token)
+    except ValueError:
+        return False
+    return True
+
+
 def parse_interface_is_up(output: str, vendor: str, interface_name: str) -> bool:
-    """Comprueba estado fisico y protocolo solo en la interfaz solicitada."""
+    """Comprueba estado fisico y protocolo en salidas breves de interfaz."""
     for line in output.splitlines():
         columns = line.split()
         if len(columns) < 3:
@@ -32,6 +42,8 @@ def parse_interface_is_up(output: str, vendor: str, interface_name: str) -> bool
         if matches:
             if vendor == "cisco":
                 return columns[-2].lower() == "up" and columns[-1].lower() == "up"
+            if len(columns) >= 4 and _is_ip_or_unassigned(columns[1]):
+                return columns[2].lower().startswith("up") and columns[3].lower().startswith("up")
             return columns[1].lower().startswith("up") and columns[2].lower().startswith("up")
     return False
 
@@ -197,7 +209,7 @@ class PostValidationTriageService:
         """Valida el servicio y garantiza limpieza tras las consultas de la sonda."""
         expected = build_expected_state(intent, variant=variant)
         pe_node = self._topology.get_node(expected.pe_node_id)
-        interface_command = "show ip interface brief" if pe_node.vendor == "cisco" else "display interface brief"
+        interface_command = "show ip interface brief" if pe_node.vendor == "cisco" else "display ip interface brief"
         pe_up = parse_interface_is_up(
             self._transport.execute_show(pe_node, interface_command),
             pe_node.vendor, expected.pe_subinterface,

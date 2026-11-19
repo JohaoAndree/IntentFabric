@@ -23,7 +23,7 @@ def _reference_intent(access_node_id: str, pe_node_id: str) -> L2VpnIntent:
             bandwidth_mbps=200, qos_policy="QOS_L2VPN_200M", rd="65000:410",
             local_ac_id=3102, remote_ac_id=3101, remote_pe_node_id="PE2-TEST",
             access_node_id=access_node_id, pe_node_id=pe_node_id,
-            access_interface="GigabitEthernet0/0/1",
+            access_interface="GE1/0/1",
         )
     return build_plugin_catalog().parse_intent(raw)
 

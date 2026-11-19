@@ -7,7 +7,7 @@ quit
 traffic policy TEST_POLICY
  classifier TEST_POLICY behavior TEST_POLICY
 quit
-interface GigabitEthernet0/0/0.10
+interface GE0/0/1.10
  description TEST-0000000001
  dot1q termination vid 10
  ip binding vpn-instance TEST-INTERNET

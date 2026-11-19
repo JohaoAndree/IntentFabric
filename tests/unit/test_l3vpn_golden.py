@@ -22,7 +22,7 @@ def _reference_intent(access_node_id: str, pe_node_id: str) -> L3VpnIntent:
             description="L3VPN-CORP-000002", vlan_id=210, wan_network="172.16.20.0/30",
             bandwidth_mbps=200, qos_policy="QOS_L3VPN_200M", rd="65000:210", ce_asn=65210,
             access_node_id=access_node_id, pe_node_id=pe_node_id,
-            access_interface="GigabitEthernet0/0/1",
+            access_interface="GE1/0/1",
         )
     return build_plugin_catalog().parse_intent(raw)
 
@@ -153,7 +153,7 @@ def test_teardown_removes_vrf_family_interface_and_qos_in_approved_order(
         )
     else:
         removals = (
-            " undo ipv4-family vpn-instance VRF_CORP_A", "undo interface GigabitEthernet0/0/0.110",
+            " undo ipv4-family vpn-instance VRF_CORP_A", "undo interface GE0/0/1.110",
             "undo traffic policy QOS_L3VPN_100M", "undo traffic behavior QOS_L3VPN_100M_BEHAVIOR",
             "undo traffic classifier QOS_L3VPN_100M_CLASS", "undo ip vpn-instance VRF_CORP_A",
         )

@@ -38,7 +38,7 @@ def test_parser_resolves_mixed_route_remote_loopback_and_defaults_without_mutati
     assert tuple(hop.node_id for hop in intent.hops) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
     assert tuple(hop.vendor for hop in intent.hops) == ("cisco", "huawei", "huawei")
     assert intent.access.customer_port == "GigabitEthernet1/0/1"
-    assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/0"
+    assert intent.provider_edge.parent_interface == "GE0/0/1"
     assert intent.remote_pe_ip == IPv4Address("10.255.0.1")
     assert intent.evi_id == intent.local_ac_id == intent.remote_ac_id == intent.pw_id == 310
     assert intent.rd == intent.rt_import == intent.rt_export == "65000:310"
@@ -181,7 +181,7 @@ def test_defaults_follow_inventory_asn_and_resolved_route() -> None:
     intent = parse_l2vpn_intent(_raw(), topology=topology)
     assert intent.rd == intent.rt_import == intent.rt_export == "65100:310"
     reverse = _parse(_raw() | {
-        "access_node_id": "S3-4505-TEST", "access_interface": "GE0/0/1",
+        "access_node_id": "S3-4505-TEST", "access_interface": "GE1/0/1",
         "pe_node_id": "PE1-TEST", "remote_pe_node_id": "PE2-TEST",
     })
     assert tuple(hop.vendor for hop in reverse.hops) == ("huawei", "cisco", "cisco")
@@ -224,7 +224,7 @@ def test_context_preserves_exact_variables_for_every_hop_and_operation() -> None
             else:
                 expected.update(
                     pe_interface=hop.parent_interface, parent_interface=hop.parent_interface,
-                    pe_subinterface="GigabitEthernet0/0/0.310", qos_policy="QOS_L2VPN_100M",
+                    pe_subinterface="GE0/0/1.310", qos_policy="QOS_L2VPN_100M",
                     bandwidth_mbps=100, pw_id=310, evi_id=310, local_ac_id=310, remote_ac_id=310,
                     instance_name="VPWS_310", rd="65000:310", rt_import="65000:310", rt_export="65000:310",
                     remote_pe_node_id="PE1-TEST", remote_pe_ip="10.255.0.1",

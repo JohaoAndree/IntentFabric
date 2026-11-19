@@ -48,9 +48,9 @@ def test_parser_preserves_data_and_does_not_mutate_input(valid_raw: dict[str, An
     assert intent.access.management_ip == IPv4Address("192.168.56.101")
     assert intent.access.customer_port == "GigabitEthernet1/0/1"
     assert intent.access.uplink_interface == "GigabitEthernet1/0/10"
-    assert intent.transits[0].downstream_interface == "GigabitEthernet1/0/24"
-    assert intent.transits[0].upstream_interface == "GigabitEthernet1/0/25"
-    assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/0"
+    assert intent.transits[0].downstream_interface == "GE1/0/24"
+    assert intent.transits[0].upstream_interface == "GE1/0/23"
+    assert intent.provider_edge.parent_interface == "GE0/0/1"
 
 
 @pytest.mark.parametrize("service_type", ("DIA", "dia", " Dia "))

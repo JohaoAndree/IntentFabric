@@ -53,7 +53,7 @@ def _intent(service: str = "dia", pe_vendor: str = "huawei") -> DiaIntent | L3Vp
     raw = dict(load_intent_mapping(_ROOT / f"examples/intents/{service}_valid.json"))
     if pe_vendor == "cisco":
         raw.update(
-            access_node_id="S3-4505-TEST", access_interface="GE0/0/1", pe_node_id="PE1-TEST",
+            access_node_id="S3-4505-TEST", access_interface="GE1/0/1", pe_node_id="PE1-TEST",
         )
         if service == "l2vpn":
             raw["remote_pe_node_id"] = "PE2-TEST"
@@ -68,6 +68,7 @@ def _transport(intent: DiaIntent | L3VpnIntent | L2VpnIntent) -> SimulatedTransp
         f"display port vlan {intent.access.customer_port}": _fixture("huawei_display_port_vlan_free.txt"),
         "show ip interface brief": _fixture("cisco_show_ip_interface_brief_clean.txt"),
         "display interface brief": _fixture("huawei_display_interface_brief_clean.txt"),
+        "display ip interface brief": _fixture("huawei_display_ip_interface_brief_clean.txt"),
         "show vrf": _fixture("cisco_show_vrf_clean.txt"),
         "display ip vpn-instance": _fixture("huawei_display_ip_vpn_instance_clean.txt"),
         "show bgp all summary": _fixture("cisco_show_bgp_all_summary_clean.txt"),
@@ -82,11 +83,15 @@ def test_documented_fixtures_parse_without_header_false_positives(vendor: str) -
     assert parse_active_vlans(_fixture(f"{vendor}_{'show_vlan_brief' if cisco else 'display_vlan'}_clean.txt"), vendor) == frozenset({1})
     assert parse_access_port_vlan(
         _fixture(f"{vendor}_{'show_interfaces_switchport' if cisco else 'display_port_vlan'}_free.txt"),
-        vendor, "Gi1/0/1" if cisco else "GE0/0/1",
+        vendor, "Gi1/0/1" if cisco else "GE1/0/1",
     ) == 1
     assert parse_existing_interfaces(
         _fixture(f"{vendor}_{'show_ip_interface_brief' if cisco else 'display_interface_brief'}_clean.txt"), vendor,
-    ) == frozenset({"GigabitEthernet0/0/4" if cisco else "GigabitEthernet0/0/0"})
+    ) == frozenset({"GigabitEthernet0/0/4" if cisco else "GE1/0/1"})
+    if not cisco:
+        assert parse_existing_interfaces(
+            _fixture("huawei_display_ip_interface_brief_clean.txt"), vendor,
+        ) == frozenset({"GE0/0/1", "10GE0/0/0"})
     assert parse_existing_vrfs(
         _fixture(f"{vendor}_{'show_vrf' if cisco else 'display_ip_vpn_instance'}_clean.txt"), vendor,
     ) == frozenset({"TEST-INTERNET", "VRF_CORP_A"})
@@ -115,9 +120,9 @@ def test_vlan_parser_obeys_ranges_and_huawei_table_or_active_list() -> None:
 
 def test_huawei_port_parser_matches_only_the_requested_interface() -> None:
     """Compara abreviaturas canonicas y omite filas de otras interfaces."""
-    output = _fixture("huawei_display_port_vlan_free.txt").replace("GigabitEthernet", "GE")
-    assert parse_access_port_vlan(output, "huawei", "GigabitEthernet0/0/1") == 1
-    assert parse_access_port_vlan(output, "huawei", "GigabitEthernet0/0/2") is None
+    output = _fixture("huawei_display_port_vlan_free.txt")
+    assert parse_access_port_vlan(output, "huawei", "GigabitEthernet1/0/1") == 1
+    assert parse_access_port_vlan(output, "huawei", "GigabitEthernet1/0/2") is None
 
 
 @pytest.mark.parametrize("original,replacement", [
@@ -160,7 +165,7 @@ def test_cisco_port_parser_accepts_equivalent_name_and_each_valid_access_mode(
 def test_huawei_port_parser_rejects_non_access_link_type_with_pvid_one(link_type: str) -> None:
     """Un PVID 1 no habilita puertos Huawei de tipo trunk o hybrid."""
     output = _fixture("huawei_display_port_vlan_free.txt").replace("access", link_type)
-    assert parse_access_port_vlan(output, "huawei", "GE0/0/1") is None
+    assert parse_access_port_vlan(output, "huawei", "GE1/0/1") is None
 
 
 @pytest.mark.parametrize("service", _SERVICES)
@@ -206,7 +211,7 @@ def test_clean_preflight_checks_each_hop_in_order_read_only(service: str, pe_ven
         (intent.access.node_id, "show vlan brief" if intent.access.vendor == "cisco" else "display vlan"),
         (intent.access.node_id, access_command),
         (intent.transits[0].node_id, "show vlan brief" if intent.transits[0].vendor == "cisco" else "display vlan"),
-        (intent.provider_edge.node_id, "show ip interface brief" if pe_vendor == "cisco" else "display interface brief"),
+        (intent.provider_edge.node_id, "show ip interface brief" if pe_vendor == "cisco" else "display ip interface brief"),
     ]
     if service == "dia":
         expected.append((intent.provider_edge.node_id, "show vrf" if pe_vendor == "cisco" else "display ip vpn-instance"))
@@ -233,10 +238,10 @@ def test_preflight_accumulates_all_dia_collisions_in_hop_order(pe_vendor: str) -
     port_output = port_output.replace("VLAN: 1", "VLAN: 210") if cisco_access else port_output.replace("access       1", "access       210")
     transport.set_show_output(intent.access.node_id, port_command, port_output)
     cisco_pe = pe_vendor == "cisco"
-    interface_command = "show ip interface brief" if cisco_pe else "display interface brief"
-    interface_output = _fixture("cisco_show_ip_interface_brief_clean.txt" if cisco_pe else "huawei_display_interface_brief_clean.txt")
+    interface_command = "show ip interface brief" if cisco_pe else "display ip interface brief"
+    interface_output = _fixture("cisco_show_ip_interface_brief_clean.txt" if cisco_pe else "huawei_display_ip_interface_brief_clean.txt")
     abbreviated = abbreviate_interface_name(intent.provider_edge.parent_interface, pe_vendor)
-    parent = "GigabitEthernet0/0/4" if cisco_pe else "GigabitEthernet0/0/0"
+    parent = "GigabitEthernet0/0/4" if cisco_pe else "GE0/0/1"
     transport.set_show_output(intent.provider_edge.node_id, interface_command, interface_output.replace(parent, f"{abbreviated}.{intent.vlan_id}"))
     transport.set_show_output(intent.provider_edge.node_id, "show vrf" if cisco_pe else "display ip vpn-instance", "")
     issues = build_online_preflight_checker(transport=transport).check_preflight(intent)

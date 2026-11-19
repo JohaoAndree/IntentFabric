@@ -18,7 +18,7 @@ _ROUTES = (("S3-9306-TEST", "PE2-TEST"), ("S3-4505-TEST", "PE1-TEST"))
 def _reference_intent(access_node_id: str, pe_node_id: str) -> DiaIntent:
     raw = dict(load_intent_mapping(_PROJECT_ROOT / "examples/intents/dia_valid.json"))
     raw.update(access_node_id=access_node_id, pe_node_id=pe_node_id,
-               access_interface="Gi1/0/1" if access_node_id == "S3-9306-TEST" else "GE0/0/1")
+               access_interface="Gi1/0/1" if access_node_id == "S3-9306-TEST" else "GE1/0/1")
     return build_plugin_catalog().parse_intent(raw)
 
 

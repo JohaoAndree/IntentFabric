@@ -26,7 +26,7 @@ _CASES = (("dia", "default"), ("l3vpn", "default"), ("l2vpn", "default"),
 def _plan(service: str, variant: str, pe_vendor: str, operation: Operation) -> ServiceGenerationPlan:
     raw = dict(load_intent_mapping(_ROOT / f"examples/intents/{service}_valid.json"))
     if pe_vendor == "cisco":
-        raw.update(access_node_id="S3-4505-TEST", pe_node_id="PE1-TEST", access_interface="GE0/0/1")
+        raw.update(access_node_id="S3-4505-TEST", pe_node_id="PE1-TEST", access_interface="GE1/0/1")
         if service == "l2vpn":
             raw["remote_pe_node_id"] = "PE2-TEST"
     intent = build_plugin_catalog().parse_intent(raw)

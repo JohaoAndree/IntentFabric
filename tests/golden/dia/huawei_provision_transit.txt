@@ -1,9 +1,9 @@
 vlan 10
  description TEST-0000000001
 quit
-interface GigabitEthernet1/0/24
+interface GE1/0/24
  port trunk allow-pass vlan 10
 quit
-interface GigabitEthernet1/0/25
+interface GE1/0/23
  port trunk allow-pass vlan 10
 quit

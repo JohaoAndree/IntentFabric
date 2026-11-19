@@ -42,7 +42,7 @@ def test_parser_resolves_mixed_route_asn_and_symmetric_targets_without_mutation(
     assert tuple(hop.node_id for hop in intent.hops) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
     assert tuple(hop.vendor for hop in intent.hops) == ("cisco", "huawei", "huawei")
     assert intent.access.customer_port == "GigabitEthernet1/0/1"
-    assert intent.provider_edge.parent_interface == "GigabitEthernet0/0/0"
+    assert intent.provider_edge.parent_interface == "GE0/0/1"
     symmetric = {key: value for key, value in raw.items() if key not in ("rt_import", "rt_export")}
     assert _parse(symmetric | {"route_target": "65000:110"}) == intent
     assert _parse(raw | {"rt_export": "65000:210"}).rt_export == "65000:210"
@@ -174,8 +174,8 @@ def test_context_preserves_all_hop_fields_and_optional_lan_without_vendor_qos() 
         assert contexts[1]["ingress_interface"] == contexts[1]["downstream_interface"] == intent.transits[0].downstream_interface
         assert contexts[1]["egress_interface"] == contexts[1]["upstream_interface"] == intent.transits[0].upstream_interface
         assert contexts[2].items() >= {
-            "pe_interface": "GigabitEthernet0/0/0", "parent_interface": "GigabitEthernet0/0/0",
-            "pe_subinterface": "GigabitEthernet0/0/0.110", "vrf_name": "VRF_CORP_A",
+            "pe_interface": "GE0/0/1", "parent_interface": "GE0/0/1",
+            "pe_subinterface": "GE0/0/1.110", "vrf_name": "VRF_CORP_A",
             "rd": "65000:110", "rt_import": "65000:110", "rt_export": "65000:110",
             "pe_asn": 65000, "ce_asn": 65110, "qos_policy": "QOS_L3VPN_100M",
             "bandwidth_mbps": 100, "wan_network": "172.16.10.0/30",

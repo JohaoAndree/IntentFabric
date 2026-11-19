@@ -157,7 +157,7 @@ class OnlinePreFlightChecker:
         expected_subif = normalize_interface_name(
             derive_subinterface_name(hop.parent_interface, intent.vlan_id), vendor=node.vendor,
         )
-        command = "show ip interface brief" if node.vendor == "cisco" else "display interface brief"
+        command = "show ip interface brief" if node.vendor == "cisco" else "display ip interface brief"
         output = self._transport.execute_show(node, command)
         if expected_subif in parse_existing_interfaces(output, node.vendor):
             issues.append(_issue(

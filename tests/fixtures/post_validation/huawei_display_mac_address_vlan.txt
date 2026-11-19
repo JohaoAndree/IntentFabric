@@ -1,2 +1,3 @@
-MAC Address VLAN/VSI Learned-From Type
-0200-0000-0001 210/- GE1/0/24 dynamic
+MAC Address VLAN/VSI/BD Learned-From Type Age
+0200-0000-0001 210/-/- GE1/0/24 dynamic -
+Total items: 1

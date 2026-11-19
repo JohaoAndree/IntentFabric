@@ -707,7 +707,7 @@ def test_inventory_defects_block_preflight_with_exact_location(
         transit = intent.transits[0]
         intent = replace(intent, transits=(replace(transit, downstream_interface=transit.upstream_interface, upstream_interface=transit.downstream_interface),))
     elif kind == "wrong_pe":
-        intent = replace(intent, provider_edge=replace(intent.provider_edge, parent_interface="GE0/0/1"))
+        intent = replace(intent, provider_edge=replace(intent.provider_edge, parent_interface="10GE0/0/0"))
     else:
         topology = replace(topology, links=topology.links[1:])
     checker = _PreFlightChecker()
@@ -768,7 +768,7 @@ def test_programmatic_client_port_checks_every_incident_link(
 ) -> None:
     """Bloquea cualquier troncal del acceso en ambos sentidos y permite un puerto libre."""
     topology = load_default_topology()
-    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE0/0/2"))
+    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE1/0/2"))
     if reverse_links:
         links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
                       for link in reversed(links))
