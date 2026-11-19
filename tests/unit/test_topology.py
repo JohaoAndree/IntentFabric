@@ -22,51 +22,62 @@ def _catalog() -> TopologyCatalog:
 
 
 def test_lab_catalog_preserves_all_nodes_links_and_metadata() -> None:
-    """Carga los seis nodos y cinco enlaces exactos del laboratorio aprobado."""
+    """Carga los siete nodos y seis enlaces exactos del laboratorio aprobado."""
     catalog = _catalog()
     assert tuple(node.node_id for node in catalog.nodes) == (
-        "PE1-TEST", "PE2-TEST", "S1-4505-TEST", "S1-9306-TEST", "S3-4505-TEST", "S3-9306-TEST",
+        "PE1-CISCO-TEST", "PE2-HUAWEI-TEST", "PE3-CISCO-TEST",
+        "S1-CISCO-TEST", "S1-HUAWEI-TEST", "S2-CISCO-TEST", "S2-HUAWEI-TEST",
     )
     expected = (
-        ("S3-9306-TEST", "cisco", "C9300L-24T-4G", "access", "192.168.56.101", "cisco_xe"),
-        ("S1-9306-TEST", "huawei", "S5735-L24P4XE-A-V2", "transit", "192.168.56.102", "huawei"),
-        ("PE2-TEST", "huawei", "AR5710-S8T2XE", "pe", "192.168.56.103", "huawei"),
-        ("S3-4505-TEST", "huawei", "S5735-L24P4XE-A-V2", "access", "192.168.56.104", "huawei"),
-        ("S1-4505-TEST", "cisco", "C9300L-24T-4G", "transit", "192.168.56.105", "cisco_xe"),
-        ("PE1-TEST", "cisco", "C8200L-1N-4T", "pe", "192.168.56.106", "cisco_xe"),
+        ("S1-CISCO-TEST", "cisco", "C9300L-24T-4G", "access", "192.168.56.101", "cisco_xe"),
+        ("S2-HUAWEI-TEST", "huawei", "S5735-L24P4XE-A-V2", "transit", "192.168.56.102", "huawei"),
+        ("PE2-HUAWEI-TEST", "huawei", "AR5710-S8T2XE", "pe", "192.168.56.103", "huawei"),
+        ("S1-HUAWEI-TEST", "huawei", "S5735-L24P4XE-A-V2", "access", "192.168.56.104", "huawei"),
+        ("S2-CISCO-TEST", "cisco", "C9300L-24T-4G", "transit", "192.168.56.105", "cisco_xe"),
+        ("PE1-CISCO-TEST", "cisco", "C8200L-1N-4T", "pe", "192.168.56.106", "cisco_xe"),
+        ("PE3-CISCO-TEST", "cisco", "C8200L-1N-4T", "pe", "192.168.56.107", "cisco_xe"),
     )
     for node_id, vendor, model, role, address, os_family in expected:
         node = catalog.get_node(node_id)
         assert (node.hostname, node.vendor, node.model, node.role.value, str(node.management_ip), node.os_family.value) == (
             node_id, vendor, model, role, address, os_family,
         )
-    assert catalog.get_node("PE1-TEST").loopback0_ip == IPv4Address("10.255.0.1")
-    assert catalog.get_node("PE2-TEST").loopback0_ip == IPv4Address("10.255.0.2")
-    assert catalog.get_node("PE1-TEST").asn == catalog.get_node("PE2-TEST").asn == 65000
-    assert len(catalog.links) == 5
+    assert catalog.get_node("PE1-CISCO-TEST").loopback0_ip == IPv4Address("10.255.0.1")
+    assert catalog.get_node("PE2-HUAWEI-TEST").loopback0_ip == IPv4Address("10.255.0.2")
+    assert catalog.get_node("PE3-CISCO-TEST").loopback0_ip == IPv4Address("10.255.0.3")
+    assert (
+        catalog.get_node("PE1-CISCO-TEST").asn
+        == catalog.get_node("PE2-HUAWEI-TEST").asn
+        == catalog.get_node("PE3-CISCO-TEST").asn
+        == 65000
+    )
+    assert len(catalog.links) == 6
     assert catalog == _catalog()
 
 
 def test_queries_normalize_interfaces_and_ignore_link_direction() -> None:
     """Consulta puertos y vecinos canonicos sin depender del orden o sentido YAML."""
     catalog = _catalog()
-    node = replace(catalog.get_node("S3-9306-TEST"), interfaces=("Gi1/0/1", "GE1/0/10"))
+    node = replace(catalog.get_node("S1-CISCO-TEST"), interfaces=("Gi1/0/1", "GE1/0/10"))
     assert node.interfaces == ("GigabitEthernet1/0/1", "GigabitEthernet1/0/10")
     assert node.has_interface("GE1/0/1.10")
     assert not node.has_interface("GE1/0/2")
-    assert catalog.find_link_between("S3-9306-TEST", "S1-9306-TEST") == (
+    assert catalog.find_link_between("S1-CISCO-TEST", "S2-HUAWEI-TEST") == (
         "GigabitEthernet1/0/10", "GE1/0/24",
     )
-    assert catalog.find_link_between("S1-9306-TEST", "S3-9306-TEST") == (
+    assert catalog.find_link_between("S2-HUAWEI-TEST", "S1-CISCO-TEST") == (
         "GE1/0/24", "GigabitEthernet1/0/10",
     )
-    assert catalog.find_link_between("PE1-TEST", "PE2-TEST") == (
+    assert catalog.find_link_between("PE1-CISCO-TEST", "PE2-HUAWEI-TEST") == (
         "GigabitEthernet0/0/0", "10GE0/0/0",
     )
-    assert catalog.find_link_between("S1-9306-TEST", "PE2-TEST") == (
+    assert catalog.find_link_between("S2-HUAWEI-TEST", "PE2-HUAWEI-TEST") == (
         "GE1/0/23", "GE0/0/1",
     )
-    assert catalog.find_link_between("S3-9306-TEST", "PE2-TEST") is None
+    assert catalog.find_link_between("S2-HUAWEI-TEST", "PE3-CISCO-TEST") == (
+        "GE1/0/22", "GigabitEthernet0/0/1",
+    )
+    assert catalog.find_link_between("S1-CISCO-TEST", "PE2-HUAWEI-TEST") is None
     assert catalog.find_node("absent") is None
     with pytest.raises(KeyError, match="absent"):
         catalog.get_node("absent")
@@ -90,14 +101,14 @@ def test_queries_normalize_interfaces_and_ignore_link_direction() -> None:
 def test_invalid_node_metadata_is_rejected(attribute: str, value: object) -> None:
     """Rechaza identidades vacias, familias incoherentes y metadatos PE invalidos."""
     with pytest.raises(TopologyValidationError):
-        replace(_catalog().get_node("PE2-TEST"), **{attribute: value})
+        replace(_catalog().get_node("PE2-HUAWEI-TEST"), **{attribute: value})
 
 
 @pytest.mark.parametrize("asn", (1, 4294967295))
 def test_asn_boundaries_and_non_pe_optional_metadata(asn: int) -> None:
     """Admite extremos ASN de 32 bits y nodos no PE sin datos de loopback."""
-    assert replace(_catalog().get_node("PE2-TEST"), asn=asn).asn == asn
-    assert _catalog().get_node("S3-9306-TEST").loopback0_ip is None
+    assert replace(_catalog().get_node("PE2-HUAWEI-TEST"), asn=asn).asn == asn
+    assert _catalog().get_node("S1-CISCO-TEST").loopback0_ip is None
 
 
 @pytest.mark.parametrize("attribute", ("node_id", "hostname", "management_ip"))
@@ -118,7 +129,7 @@ def test_catalog_rejects_inconsistent_links(kind: str) -> None:
     elif kind == "missing_port":
         links = (replace(link, source_interface="Gi1/0/99"),)
     elif kind == "occupied_port":
-        links = (link, TopologyLink(link.source_node_id, link.source_interface, "PE1-TEST", "Gi0/0/0"))
+        links = (link, TopologyLink(link.source_node_id, link.source_interface, "PE1-CISCO-TEST", "Gi0/0/0"))
     else:
         links = (link, TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface))
     with pytest.raises(TopologyValidationError):
@@ -162,7 +173,7 @@ def test_yaml_repository_translates_malformed_documents(tmp_path: Path, document
     ("vendor: cisco", "vendor: unknown"), ("os_family: cisco_xe", "os_family: unknown"),
     ("role: access", "role: unknown"), ("management_ip: 192.168.56.101", "management_ip: true"),
     ("management_ip: 192.168.56.101", "management_ip: 2001:db8::1"),
-    ("asn: 65000", "asn: true"), ("source_node_id: S3-9306-TEST", "source_node_id: false"),
+    ("asn: 65000", "asn: true"), ("source_node_id: S1-CISCO-TEST", "source_node_id: false"),
 ))
 def test_yaml_repository_rejects_wrong_scalar_types(tmp_path: Path, original: str, replacement: str) -> None:
     """Rechaza tipos incompatibles y valores de enum o IPv4 desconocidos."""
@@ -185,14 +196,15 @@ def test_yaml_repository_translates_missing_file_and_encoding_errors(tmp_path: P
 
 
 @pytest.mark.parametrize(("access_id", "pe_id", "transit_id", "client", "uplink", "ingress", "egress", "parent"), (
-    ("S3-9306-TEST", "PE2-TEST", "S1-9306-TEST", "Gi1/0/1", "Gi1/0/10", "GE1/0/24", "GE1/0/23", "GE0/0/1"),
-    ("S3-4505-TEST", "PE1-TEST", "S1-4505-TEST", "GE1/0/1", "GE1/0/8", "Gi1/0/11", "Gi1/0/25", "Gi0/0/4"),
+    ("S1-CISCO-TEST", "PE2-HUAWEI-TEST", "S2-HUAWEI-TEST", "Gi1/0/1", "Gi1/0/10", "GE1/0/24", "GE1/0/23", "GE0/0/1"),
+    ("S1-CISCO-TEST", "PE3-CISCO-TEST", "S2-HUAWEI-TEST", "Gi1/0/1", "Gi1/0/10", "GE1/0/24", "GE1/0/22", "Gi0/0/1"),
+    ("S1-HUAWEI-TEST", "PE1-CISCO-TEST", "S2-CISCO-TEST", "GE1/0/1", "GE1/0/8", "Gi1/0/11", "Gi1/0/24", "Gi0/0/1"),
 ))
 def test_resolver_builds_exact_hops_for_both_lab_routes(
     access_id: str, pe_id: str, transit_id: str, client: str, uplink: str,
     ingress: str, egress: str, parent: str,
 ) -> None:
-    """Resuelve ambas ramas con puertos, identidad y gestion exactos del inventario."""
+    """Resuelve las ramas del inventario incluyendo la ruta L2VPN de contingencia a PE3-CISCO-TEST."""
     catalog = _catalog()
     resolver = TopologyPathResolver(catalog)
     assert resolver.catalog is catalog
@@ -206,21 +218,31 @@ def test_resolver_builds_exact_hops_for_both_lab_routes(
     assert resolver.resolve_access_to_pe_hops(access_node_id=access_id, client_interface=client, pe_node_id=pe_id) == expected
 
 
+def test_resolver_resolves_l2vpn_contingency_route_to_pe3_cisco() -> None:
+    """Resuelve deterministamente S1-CISCO-TEST -> S2-HUAWEI-TEST (GE1/0/24 -> GE1/0/22) -> PE3-CISCO-TEST."""
+    hops = TopologyPathResolver(_catalog()).resolve_access_to_pe_hops(
+        access_node_id="S1-CISCO-TEST", access_interface="Gi1/0/1", pe_node_id="PE3-CISCO-TEST",
+    )
+    assert tuple(hop.node_id for hop in hops) == ("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE3-CISCO-TEST")
+    assert (hops[1].downstream_interface, hops[1].upstream_interface) == ("GE1/0/24", "GE1/0/22")
+    assert hops[2].parent_interface == "GigabitEthernet0/0/1"
+
+
 @pytest.mark.parametrize(("overrides", "code", "node_id"), (
     ({"access_node_id": "absent"}, "TOPOLOGY_NODE_NOT_FOUND", "absent"),
     ({"pe_node_id": "absent"}, "TOPOLOGY_NODE_NOT_FOUND", "absent"),
-    ({"access_node_id": "S1-9306-TEST"}, "TOPOLOGY_INVALID_NODE_ROLE", "S1-9306-TEST"),
-    ({"pe_node_id": "S1-9306-TEST"}, "TOPOLOGY_INVALID_NODE_ROLE", "S1-9306-TEST"),
-    ({"access_interface": "Gi1/0/99"}, "TOPOLOGY_INTERFACE_NOT_FOUND", "S3-9306-TEST"),
-    ({"access_interface": "Gi1/0/10"}, "TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", "S3-9306-TEST"),
-    ({"access_interface": "bad"}, "TOPOLOGY_INTERFACE_NOT_FOUND", "S3-9306-TEST"),
-    ({"pe_node_id": "PE1-TEST"}, "TOPOLOGY_PATH_NOT_FOUND", "PE1-TEST"),
+    ({"access_node_id": "S2-HUAWEI-TEST"}, "TOPOLOGY_INVALID_NODE_ROLE", "S2-HUAWEI-TEST"),
+    ({"pe_node_id": "S2-HUAWEI-TEST"}, "TOPOLOGY_INVALID_NODE_ROLE", "S2-HUAWEI-TEST"),
+    ({"access_interface": "Gi1/0/99"}, "TOPOLOGY_INTERFACE_NOT_FOUND", "S1-CISCO-TEST"),
+    ({"access_interface": "Gi1/0/10"}, "TOPOLOGY_CLIENT_INTERFACE_IS_TRUNK", "S1-CISCO-TEST"),
+    ({"access_interface": "bad"}, "TOPOLOGY_INTERFACE_NOT_FOUND", "S1-CISCO-TEST"),
+    ({"pe_node_id": "PE1-CISCO-TEST"}, "TOPOLOGY_PATH_NOT_FOUND", "PE1-CISCO-TEST"),
 ))
 def test_resolver_rejects_invalid_demarcations_with_exact_codes(
     overrides: dict[str, str], code: str, node_id: str,
 ) -> None:
     """Distingue nodos ausentes, roles, interfaces, troncales y rutas no validas."""
-    arguments = {"access_node_id": "S3-9306-TEST", "access_interface": "Gi1/0/1", "pe_node_id": "PE2-TEST"}
+    arguments = {"access_node_id": "S1-CISCO-TEST", "access_interface": "Gi1/0/1", "pe_node_id": "PE2-HUAWEI-TEST"}
     with pytest.raises(TopologyPathResolutionError) as error:
         TopologyPathResolver(_catalog()).resolve_access_to_pe_hops(**(arguments | overrides))
     assert error.value.code == code
@@ -229,10 +251,10 @@ def test_resolver_rejects_invalid_demarcations_with_exact_codes(
 
 def _alternative_routes() -> TopologyCatalog:
     catalog = _catalog()
-    access = replace(catalog.get_node("S3-9306-TEST"), interfaces=("Gi0/1", "Gi0/2", "Gi0/3", "Gi0/4"))
-    pe = replace(catalog.get_node("PE2-TEST"), interfaces=("Gi0/1", "Gi0/2", "Gi0/4"))
+    access = replace(catalog.get_node("S1-CISCO-TEST"), interfaces=("Gi0/1", "Gi0/2", "Gi0/3", "Gi0/4"))
+    pe = replace(catalog.get_node("PE2-HUAWEI-TEST"), interfaces=("Gi0/1", "Gi0/2", "Gi0/4"))
     transits = tuple(replace(
-        catalog.get_node("S1-9306-TEST"), node_id=f"T-{letter}", hostname=f"T-{letter}",
+        catalog.get_node("S2-HUAWEI-TEST"), node_id=f"T-{letter}", hostname=f"T-{letter}",
         management_ip=IPv4Address(f"192.0.2.{index}"), interfaces=("Gi0/1", "Gi0/2", "Gi0/3"),
     ) for index, letter in enumerate(("A", "B"), start=1))
     return TopologyCatalog((access, pe, *transits), (
@@ -253,9 +275,9 @@ def test_bfs_breaks_ties_deterministically_and_terminates_with_cycles() -> None:
         for link in catalog.links
     )):
         hops = TopologyPathResolver(TopologyCatalog(tuple(reversed(catalog.nodes)), links)).resolve_access_to_pe_hops(
-            access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+            access_node_id="S1-CISCO-TEST", access_interface="Gi0/1", pe_node_id="PE2-HUAWEI-TEST",
         )
-        assert tuple(hop.node_id for hop in hops) == ("S3-9306-TEST", "T-A", "PE2-TEST")
+        assert tuple(hop.node_id for hop in hops) == ("S1-CISCO-TEST", "T-A", "PE2-HUAWEI-TEST")
         assert expected is None or hops == expected
         expected = hops
 
@@ -263,9 +285,9 @@ def test_bfs_breaks_ties_deterministically_and_terminates_with_cycles() -> None:
 def test_bfs_prefers_direct_link_over_a_lexicographically_earlier_transit() -> None:
     """Prioriza la ruta mas corta y admite acceso a PE sin transitos."""
     catalog = _alternative_routes()
-    direct = TopologyLink("S3-9306-TEST", "Gi0/4", "PE2-TEST", "Gi0/4")
+    direct = TopologyLink("S1-CISCO-TEST", "Gi0/4", "PE2-HUAWEI-TEST", "Gi0/4")
     hops = TopologyPathResolver(replace(catalog, links=(*catalog.links, direct))).resolve_access_to_pe_hops(
-        access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+        access_node_id="S1-CISCO-TEST", access_interface="Gi0/1", pe_node_id="PE2-HUAWEI-TEST",
     )
     assert len(hops) == 2
     assert hops[0].uplink_interface == "GigabitEthernet0/4"
@@ -282,7 +304,7 @@ def test_resolver_never_crosses_another_access_or_pe(intermediate_role: NodeRole
     ))
     with pytest.raises(TopologyPathResolutionError) as error:
         TopologyPathResolver(catalog).resolve_access_to_pe_hops(
-            access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+            access_node_id="S1-CISCO-TEST", access_interface="Gi0/1", pe_node_id="PE2-HUAWEI-TEST",
         )
     assert error.value.code == "TOPOLOGY_PATH_NOT_FOUND"
 
@@ -291,12 +313,12 @@ def test_resolver_populates_multiple_transits_in_path_order() -> None:
     """Conserva interfaces de ingreso y salida de cada transito en rutas de varios saltos."""
     original = _alternative_routes()
     links = tuple(link for link in original.links if not (
-        (link.source_node_id, link.target_node_id) in (("S3-9306-TEST", "T-B"), ("T-A", "PE2-TEST"))
+        (link.source_node_id, link.target_node_id) in (("S1-CISCO-TEST", "T-B"), ("T-A", "PE2-HUAWEI-TEST"))
     ))
     hops = TopologyPathResolver(replace(original, links=links)).resolve_access_to_pe_hops(
-        access_node_id="S3-9306-TEST", access_interface="Gi0/1", pe_node_id="PE2-TEST",
+        access_node_id="S1-CISCO-TEST", access_interface="Gi0/1", pe_node_id="PE2-HUAWEI-TEST",
     )
-    assert tuple(hop.node_id for hop in hops) == ("S3-9306-TEST", "T-A", "T-B", "PE2-TEST")
+    assert tuple(hop.node_id for hop in hops) == ("S1-CISCO-TEST", "T-A", "T-B", "PE2-HUAWEI-TEST")
     assert (hops[1].downstream_interface, hops[1].upstream_interface) == ("GE0/1", "GE0/3")
     assert (hops[2].downstream_interface, hops[2].upstream_interface) == ("GE0/3", "GE0/2")
 
@@ -306,11 +328,11 @@ def test_resolver_rejects_missing_or_duplicate_interface_aliases() -> None:
     resolver = TopologyPathResolver(_catalog())
     for arguments in ({}, {"access_interface": "Gi1/0/1", "client_interface": "Gi1/0/1"}):
         with pytest.raises(TopologyPathResolutionError) as error:
-            resolver.resolve_access_to_pe_hops(access_node_id="S3-9306-TEST", pe_node_id="PE2-TEST", **arguments)
+            resolver.resolve_access_to_pe_hops(access_node_id="S1-CISCO-TEST", pe_node_id="PE2-HUAWEI-TEST", **arguments)
         assert error.value.code == "TOPOLOGY_INTERFACE_NOT_FOUND"
 
 
-@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("node_id", ("S1-CISCO-TEST", "S2-HUAWEI-TEST"))
 @pytest.mark.parametrize("asn", (True, False, "65000", 65000.0, [], [65000], {}, {"value": 65000}))
 def test_non_pe_asn_rejects_non_integer_types_in_catalog(node_id: str, asn: object) -> None:
     """Impide incorporar ASN mutables o no enteros al catalogo de acceso y transito."""
@@ -320,7 +342,7 @@ def test_non_pe_asn_rejects_non_integer_types_in_catalog(node_id: str, asn: obje
     assert original.get_node(node_id).asn is None
 
 
-@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("node_id", ("S1-CISCO-TEST", "S2-HUAWEI-TEST"))
 @pytest.mark.parametrize("asn", (True, False, "65000", 65000.0, [], [65000], {}, {"value": 65000}))
 def test_yaml_non_pe_asn_rejects_non_integer_types(tmp_path: Path, node_id: str, asn: object) -> None:
     """Rechaza los mismos tipos ASN invalidos al cargar nodos no PE desde YAML."""
@@ -333,7 +355,7 @@ def test_yaml_non_pe_asn_rejects_non_integer_types(tmp_path: Path, node_id: str,
         YamlTopologyRepository(path).load_catalog()
 
 
-@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("node_id", ("S1-CISCO-TEST", "S2-HUAWEI-TEST"))
 @pytest.mark.parametrize("asn", (None, 65000, 65001))
 def test_non_pe_asn_remains_optional_and_immutable(tmp_path: Path, node_id: str, asn: int | None) -> None:
     """Conserva ASN opcional y entero en construccion directa y carga YAML sin exigir loopback."""
@@ -353,7 +375,7 @@ def test_non_pe_asn_remains_optional_and_immutable(tmp_path: Path, node_id: str,
         loaded.get_node(node_id).asn = 65002
 
 
-@pytest.mark.parametrize("node_id", ("S3-9306-TEST", "S1-9306-TEST"))
+@pytest.mark.parametrize("node_id", ("S1-CISCO-TEST", "S2-HUAWEI-TEST"))
 def test_non_pe_asn_rejects_integer_subclasses(node_id: str) -> None:
     """Exige int exacto incluso frente a subclases de entero en nodos no PE."""
     class InheritedAsn(int):

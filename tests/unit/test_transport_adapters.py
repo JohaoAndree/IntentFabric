@@ -17,13 +17,13 @@ from intentfabric.domain import (
 )
 
 
-def _node(node_id: str = "PE2-TEST", os_family: OsFamily | None = None) -> TopologyNode:
+def _node(node_id: str = "PE2-HUAWEI-TEST", os_family: OsFamily | None = None) -> TopologyNode:
     node = load_default_topology().get_node(node_id)
     return replace(node, os_family=os_family) if os_family is not None else node
 
 
 def _netmiko(
-    node_id: str = "PE2-TEST", os_family: OsFamily | None = None,
+    node_id: str = "PE2-HUAWEI-TEST", os_family: OsFamily | None = None,
 ) -> tuple[NetmikoTransportAdapter, MagicMock, MagicMock, TopologyNode]:
     factory = MagicMock()
     connection = factory.return_value.__enter__.return_value
@@ -35,10 +35,10 @@ def _netmiko(
 
 
 @pytest.mark.parametrize(("node_id", "override"), [
-    ("PE1-TEST", None),
-    ("S1-9306-TEST", None),
-    ("PE2-TEST", None),
-    ("PE2-TEST", OsFamily.HUAWEI_VRPV8),
+    ("PE1-CISCO-TEST", None),
+    ("S2-HUAWEI-TEST", None),
+    ("PE2-HUAWEI-TEST", None),
+    ("PE2-HUAWEI-TEST", OsFamily.HUAWEI_VRPV8),
 ])
 def test_transport_commit_is_exclusive_to_vrpv8(node_id: str, override: OsFamily | None) -> None:
     """Confirma unicamente VRPv8 y conserva comandos y transcripciones normalizadas."""
@@ -187,7 +187,7 @@ def test_simulated_outputs_fallback_updates_and_history_are_deterministic() -> N
     snapshot = adapter.history
     adapter.set_show_output(node.node_id, " display vlan ", "updated\r\n")
     assert adapter.execute_show(node, " display vlan ") == "updated\n"
-    assert adapter.execute_show(_node("S1-9306-TEST"), "display vlan") == "default\n"
+    assert adapter.execute_show(_node("S2-HUAWEI-TEST"), "display vlan") == "default\n"
     assert adapter.execute_show(node, "display bgp peer") == ""
     assert adapter.push_configuration(node, ("vlan 210",)) == ("vlan 210\n", False)
     assert len(snapshot) == 1
@@ -222,7 +222,7 @@ def test_simulated_command_failure_takes_precedence_over_node_failure() -> None:
 
 
 @pytest.mark.parametrize("method", ["show", "config"])
-@pytest.mark.parametrize("node_id,output", [("PE1-TEST", "% Invalid input"), ("PE2-TEST", "Error: rejected")])
+@pytest.mark.parametrize("node_id,output", [("PE1-CISCO-TEST", "% Invalid input"), ("PE2-HUAWEI-TEST", "Error: rejected")])
 def test_simulated_cli_rejections_are_not_successful(method: str, node_id: str, output: str) -> None:
     """Detecta rechazos de ambos vendors sin agregar registros de exito."""
     node = _node(node_id)

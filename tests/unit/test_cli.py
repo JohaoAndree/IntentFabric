@@ -115,7 +115,7 @@ def test_simulated_clean_vlan_responses_match_authorized_fixtures(vendor: str, v
     raw = bootstrap.load_intent_file(_ROOT / "examples/intents/dia_valid.json")
     raw["vlan_id"] = vlan_id
     if vendor == "huawei":
-        raw.update(access_node_id="S3-4505-TEST", access_interface="GE1/0/1", pe_node_id="PE1-TEST")
+        raw.update(access_node_id="S1-HUAWEI-TEST", access_interface="GE1/0/1", pe_node_id="PE1-CISCO-TEST")
     topology = bootstrap.load_default_topology()
     intent = bootstrap.build_plugin_catalog(topology).parse_intent(raw)
     transport = bootstrap.build_simulated_transport_for_intent(intent, topology=topology)
@@ -136,8 +136,8 @@ def test_l2vpn_variants_support_both_vendors_and_parameterized_ids(
     raw = bootstrap.load_intent_file(_ROOT / "examples/intents/l2vpn_valid.json")
     raw.update(vlan_id=777, pw_id=778, evi_id=779, local_ac_id=780, remote_ac_id=781)
     if vendor == "cisco":
-        raw.update(access_node_id="S3-4505-TEST", access_interface="GE1/0/1",
-                   pe_node_id="PE1-TEST", remote_pe_node_id="PE2-TEST")
+        raw.update(access_node_id="S1-HUAWEI-TEST", access_interface="GE1/0/1",
+                   pe_node_id="PE1-CISCO-TEST", remote_pe_node_id="PE2-HUAWEI-TEST")
     path = tmp_path / "intent.json"
     path.write_text(json.dumps(raw), encoding="utf-8", newline="\n")
     output, errors = StringIO(), StringIO()
@@ -168,9 +168,9 @@ def test_bootstrap_uses_custom_inventory_and_networks(service: str, vendor: str)
         raw.update(wan_subnet="198.51.100.0/30", lan_subnet="203.0.113.0/24")
     else:
         raw.update(wan_network="198.51.100.0/30", ce_asn=64513)
-    raw.update(access_node_id="LAB-S3-9306-TEST", pe_node_id="LAB-PE2-TEST")
+    raw.update(access_node_id="LAB-S1-CISCO-TEST", pe_node_id="LAB-PE2-HUAWEI-TEST")
     if vendor == "cisco":
-        raw.update(access_node_id="LAB-S3-4505-TEST", pe_node_id="LAB-PE1-TEST", access_interface="GE1/0/1")
+        raw.update(access_node_id="LAB-S1-HUAWEI-TEST", pe_node_id="LAB-PE1-CISCO-TEST", access_interface="GE1/0/1")
     catalog = bootstrap.build_plugin_catalog(topology)
     intent = catalog.parse_intent(raw)
     transport = bootstrap.build_simulated_transport_for_intent(intent, topology=topology)

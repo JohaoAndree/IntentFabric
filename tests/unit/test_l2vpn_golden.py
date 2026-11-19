@@ -12,16 +12,16 @@ from intentfabric.domain.template_key import NodeRole, Operation, TemplateKey
 
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_ROUTES = (("S3-9306-TEST", "PE2-TEST"), ("S3-4505-TEST", "PE1-TEST"))
+_ROUTES = (("S1-CISCO-TEST", "PE2-HUAWEI-TEST"), ("S1-HUAWEI-TEST", "PE1-CISCO-TEST"))
 
 
 def _reference_intent(access_node_id: str, pe_node_id: str) -> L2VpnIntent:
     raw = dict(load_intent_mapping(_PROJECT_ROOT / "examples/intents/l2vpn_valid.json"))
-    if access_node_id == "S3-4505-TEST":
+    if access_node_id == "S1-HUAWEI-TEST":
         raw.update(
             description="L2VPN-CORP-000002", vlan_id=410, pw_id=410, evi_id=410,
             bandwidth_mbps=200, qos_policy="QOS_L2VPN_200M", rd="65000:410",
-            local_ac_id=3102, remote_ac_id=3101, remote_pe_node_id="PE2-TEST",
+            local_ac_id=3102, remote_ac_id=3101, remote_pe_node_id="PE2-HUAWEI-TEST",
             access_node_id=access_node_id, pe_node_id=pe_node_id,
             access_interface="GE1/0/1",
         )
@@ -43,7 +43,7 @@ def test_generation_matches_golden_bytes_and_hashes_for_every_vendor_path(
     assert plan.to_dict() == repeated.to_dict()
     assert len(plan.artifacts) == 3
     example = _PROJECT_ROOT / "examples/intents/l2vpn_valid"
-    if access_node_id == "S3-9306-TEST":
+    if access_node_id == "S1-CISCO-TEST":
         for suffix in ("json", "yaml"):
             equivalent = build_plugin_catalog().parse_intent(load_intent_mapping(example.with_suffix(f".{suffix}")))
             assert generator.generate(equivalent, operation=operation, variant=variant) == plan
@@ -64,8 +64,8 @@ def test_generation_matches_golden_bytes_and_hashes_for_every_vendor_path(
         )
         assert artifact.commands == expected_commands
         assert artifact.template_key == TemplateKey("L2VPN", operation, intent.hops[index].role, variant)
-    expected_ids = (("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST") if access_node_id == "S3-9306-TEST"
-                    else ("S3-4505-TEST", "S1-4505-TEST", "PE1-TEST"))
+    expected_ids = (("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE2-HUAWEI-TEST") if access_node_id == "S1-CISCO-TEST"
+                    else ("S1-HUAWEI-TEST", "S2-CISCO-TEST", "PE1-CISCO-TEST"))
     assert tuple(artifact.node_id for artifact in plan.artifacts) == expected_ids
     hash_input = "|".join(f"{artifact.hop_index}:{artifact.node_id}:{artifact.sha256}" for artifact in plan.artifacts)
     assert plan.plan_sha256 == sha256(hash_input.encode("utf-8")).hexdigest()

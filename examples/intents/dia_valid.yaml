@@ -6,6 +6,6 @@ lan_subnet: 10.50.1.8/29
 bandwidth_mbps: 100
 vrf_name: TEST-INTERNET
 qos_policy_name: TEST_POLICY
-access_node_id: S3-9306-TEST
+access_node_id: S1-CISCO-TEST
 access_interface: GigabitEthernet1/0/1
-pe_node_id: PE2-TEST
+pe_node_id: PE2-HUAWEI-TEST

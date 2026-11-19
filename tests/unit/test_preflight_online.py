@@ -53,10 +53,10 @@ def _intent(service: str = "dia", pe_vendor: str = "huawei") -> DiaIntent | L3Vp
     raw = dict(load_intent_mapping(_ROOT / f"examples/intents/{service}_valid.json"))
     if pe_vendor == "cisco":
         raw.update(
-            access_node_id="S3-4505-TEST", access_interface="GE1/0/1", pe_node_id="PE1-TEST",
+            access_node_id="S1-HUAWEI-TEST", access_interface="GE1/0/1", pe_node_id="PE1-CISCO-TEST",
         )
         if service == "l2vpn":
-            raw["remote_pe_node_id"] = "PE2-TEST"
+            raw["remote_pe_node_id"] = "PE2-HUAWEI-TEST"
     return build_plugin_catalog().parse_intent(raw)
 
 
@@ -87,7 +87,7 @@ def test_documented_fixtures_parse_without_header_false_positives(vendor: str) -
     ) == 1
     assert parse_existing_interfaces(
         _fixture(f"{vendor}_{'show_ip_interface_brief' if cisco else 'display_interface_brief'}_clean.txt"), vendor,
-    ) == frozenset({"GigabitEthernet0/0/4" if cisco else "GE1/0/1"})
+    ) == frozenset({"GigabitEthernet0/0/1" if cisco else "GE1/0/1"})
     if not cisco:
         assert parse_existing_interfaces(
             _fixture("huawei_display_ip_interface_brief_clean.txt"), vendor,
@@ -241,7 +241,7 @@ def test_preflight_accumulates_all_dia_collisions_in_hop_order(pe_vendor: str) -
     interface_command = "show ip interface brief" if cisco_pe else "display ip interface brief"
     interface_output = _fixture("cisco_show_ip_interface_brief_clean.txt" if cisco_pe else "huawei_display_ip_interface_brief_clean.txt")
     abbreviated = abbreviate_interface_name(intent.provider_edge.parent_interface, pe_vendor)
-    parent = "GigabitEthernet0/0/4" if cisco_pe else "GE0/0/1"
+    parent = "GigabitEthernet0/0/1" if cisco_pe else "GE0/0/1"
     transport.set_show_output(intent.provider_edge.node_id, interface_command, interface_output.replace(parent, f"{abbreviated}.{intent.vlan_id}"))
     transport.set_show_output(intent.provider_edge.node_id, "show vrf" if cisco_pe else "display ip vpn-instance", "")
     issues = build_online_preflight_checker(transport=transport).check_preflight(intent)

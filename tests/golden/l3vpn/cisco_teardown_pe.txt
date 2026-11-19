@@ -1,7 +1,7 @@
 router bgp 65000
  no address-family ipv4 vrf VRF_CORP_A
 !
-no interface GigabitEthernet0/0/4.210
+no interface GigabitEthernet0/0/1.210
 !
 no policy-map QOS_L3VPN_200M
 !

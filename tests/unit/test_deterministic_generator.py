@@ -486,7 +486,7 @@ def test_programmatic_client_trunks_block_preflight_and_generation(
 ) -> None:
     """Rechaza generar sobre cualquier troncal de cliente antes de Pre-Flight y renderizado."""
     topology = load_default_topology()
-    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE1/0/2"))
+    links = (*topology.links, TopologyLink("S1-CISCO-TEST", "Gi1/0/2", "S1-HUAWEI-TEST", "GE1/0/2"))
     if reverse_links:
         links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
                       for link in reversed(links))

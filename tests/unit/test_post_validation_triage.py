@@ -65,9 +65,9 @@ def _fixture(name: str) -> str:
 def _intent(service: str = "dia", pe_vendor: str = "huawei") -> DiaIntent | L3VpnIntent | L2VpnIntent:
     raw = dict(load_intent_mapping(_ROOT / f"examples/intents/{service}_valid.json"))
     if pe_vendor == "cisco":
-        raw.update(access_node_id="S3-4505-TEST", access_interface="GE1/0/1", pe_node_id="PE1-TEST")
+        raw.update(access_node_id="S1-HUAWEI-TEST", access_interface="GE1/0/1", pe_node_id="PE1-CISCO-TEST")
         if service == "l2vpn":
-            raw["remote_pe_node_id"] = "PE2-TEST"
+            raw["remote_pe_node_id"] = "PE2-HUAWEI-TEST"
     return build_plugin_catalog().parse_intent(raw)
 
 
@@ -105,7 +105,7 @@ def _transport(
     cisco = pe.vendor == "cisco"
     interface_name = "cisco_show_ip_interface_brief_up.txt" if cisco else "huawei_display_ip_interface_brief_up.txt"
     interface = _fixture(interface_name).replace(
-        "GigabitEthernet0/0/4.210" if cisco else "GE0/0/1.210", expected.pe_subinterface,
+        "GigabitEthernet0/0/1.210" if cisco else "GE0/0/1.210", expected.pe_subinterface,
     )
     transport.set_show_output(pe.node_id, "show ip interface brief" if cisco else "display ip interface brief", interface)
     if isinstance(intent, L2VpnIntent):
@@ -135,8 +135,8 @@ def test_documented_fragments_parse_exact_service_evidence(vendor: str) -> None:
     """Extrae interfaz, LLDP, MAC, ping y rutas de los fragmentos documentales."""
     cisco = vendor == "cisco"
     interface = _fixture("cisco_show_ip_interface_brief_up.txt" if cisco else "huawei_display_ip_interface_brief_up.txt")
-    assert parse_interface_is_up(interface, vendor, "Gi0/0/4.210" if cisco else "GE0/0/1.210")
-    assert not parse_interface_is_up(interface, vendor, "Gi0/0/1.210" if cisco else "GE0/0/2.210")
+    assert parse_interface_is_up(interface, vendor, "Gi0/0/1.210" if cisco else "GE0/0/1.210")
+    assert not parse_interface_is_up(interface, vendor, "Gi0/0/2.210" if cisco else "GE0/0/2.210")
     if not cisco:
         assert parse_interface_is_up(interface, vendor, "Vlanif 999")
         l2_interface = _fixture("huawei_display_interface_brief_up.txt")
@@ -418,7 +418,7 @@ def test_l3_access_mac_is_required_but_transit_mac_is_only_observed(vendor: str)
 def test_pe_subinterface_down_state_is_not_accepted(vendor: str) -> None:
     """No confunde interfaz presente con protocolo y enlace operativos."""
     output = _fixture("cisco_show_ip_interface_brief_up.txt" if vendor == "cisco" else "huawei_display_ip_interface_brief_up.txt")
-    interface = "Gi0/0/4.210" if vendor == "cisco" else "GE0/0/1.210"
+    interface = "Gi0/0/1.210" if vendor == "cisco" else "GE0/0/1.210"
     assert not parse_interface_is_up(output.replace("up up", "up down"), vendor, interface)
     assert not parse_interface_is_up(output.replace("up up", "down up"), vendor, interface)
     if vendor == "huawei":

@@ -25,7 +25,7 @@ def test_bootstrap_registers_dia_with_default_vendors() -> None:
     assert isinstance(intent, DiaIntent)
     assert intent.access.vendor == "cisco"
     assert intent.provider_edge.vendor == "huawei"
-    assert intent.access.node_id == "S3-9306-TEST"
+    assert intent.access.node_id == "S1-CISCO-TEST"
 
 
 def test_bootstrap_accepts_new_vendor_without_core_changes(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,7 +61,7 @@ def test_bootstrap_keeps_unknown_service_diagnostic() -> None:
 def test_bootstrap_injects_the_same_custom_inventory_into_parser_and_validator() -> None:
     """Resuelve y valida contra el inventario suministrado en lugar del predeterminado."""
     original = bootstrap.load_default_topology()
-    modified_access = replace(original.get_node("S3-9306-TEST"), interfaces=("Gi1/0/2", "Gi1/0/10"))
+    modified_access = replace(original.get_node("S1-CISCO-TEST"), interfaces=("Gi1/0/2", "Gi1/0/10"))
     topology = TopologyCatalog(tuple(modified_access if node.node_id == modified_access.node_id else node for node in original.nodes), original.links)
     catalog = bootstrap.create_default_catalog(topology)
     raw = _raw() | {"access_interface": "Gi1/0/2"}
@@ -91,7 +91,7 @@ def test_bootstrap_integrates_l3vpn_parsing_validation_qos_and_generation(servic
     assert intent.pe_asn == 65000
     plan = bootstrap.create_default_generator(catalog).generate(intent)
     assert len(plan.artifacts) == 3
-    assert plan.artifacts[-1].node_id == "PE2-TEST"
+    assert plan.artifacts[-1].node_id == "PE2-HUAWEI-TEST"
     assert " car cir 100000 pir 100000\n" in plan.artifacts[-1].rendered_text
     with pytest.raises(PreValidationFailedError) as error:
         bootstrap.create_default_generator(catalog).generate(replace(intent, rd="bad"))
@@ -102,7 +102,7 @@ def test_bootstrap_l3vpn_uses_custom_pe_asn_and_registered_vendors(monkeypatch: 
     """Propaga el inventario y exige fabricantes registrados tambien para L3VPN."""
     original = bootstrap.load_default_topology()
     topology = replace(original, nodes=tuple(
-        replace(node, asn=65001) if node.node_id == "PE2-TEST" else node for node in original.nodes
+        replace(node, asn=65001) if node.node_id == "PE2-HUAWEI-TEST" else node for node in original.nodes
     ))
     path = Path(__file__).resolve().parents[2] / "examples/intents/l3vpn_valid.json"
     raw = load_intent_mapping(path)
@@ -127,7 +127,7 @@ def test_bootstrap_integrates_l2vpn_parser_validation_qos_and_variants(service_t
     assert str(intent.remote_pe_ip) == "10.255.0.1"
     generator = bootstrap.create_default_generator(catalog)
     plan = generator.generate(intent, variant=variant)
-    assert tuple(artifact.node_id for artifact in plan.artifacts) == ("S3-9306-TEST", "S1-9306-TEST", "PE2-TEST")
+    assert tuple(artifact.node_id for artifact in plan.artifacts) == ("S1-CISCO-TEST", "S2-HUAWEI-TEST", "PE2-HUAWEI-TEST")
     assert " car cir 100000 pir 100000\n" in plan.artifacts[-1].rendered_text
     with pytest.raises(PreValidationFailedError) as error:
         generator.generate(replace(intent, pw_id=0), variant=variant)
@@ -140,7 +140,7 @@ def test_bootstrap_l2vpn_propagates_custom_inventory_and_registered_vendors(monk
 
     original = bootstrap.load_default_topology()
     topology = replace(original, nodes=tuple(
-        replace(node, loopback0_ip=IPv4Address("10.255.1.1")) if node.node_id == "PE1-TEST" else node
+        replace(node, loopback0_ip=IPv4Address("10.255.1.1")) if node.node_id == "PE1-CISCO-TEST" else node
         for node in original.nodes
     ))
     path = Path(__file__).resolve().parents[2] / "examples/intents/l2vpn_valid.json"

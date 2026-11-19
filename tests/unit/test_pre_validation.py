@@ -663,19 +663,19 @@ def test_static_validation_reports_the_full_criterion_two_combination() -> None:
 
 @pytest.mark.parametrize(("kind", "expected_code", "field", "node_id"), (
     ("missing_node", "TOPOLOGY_NODE_NOT_FOUND", "hops[0].node_id", "absent"),
-    ("vendor", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S3-9306-TEST"),
-    ("role", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S1-9306-TEST"),
-    ("address", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S3-9306-TEST"),
-    ("client_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[0].customer_port", "S3-9306-TEST"),
-    ("uplink_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[0].uplink_interface", "S3-9306-TEST"),
-    ("ingress_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[1].downstream_interface", "S1-9306-TEST"),
-    ("egress_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[1].upstream_interface", "S1-9306-TEST"),
-    ("pe_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[2].parent_interface", "PE2-TEST"),
-    ("skipped_transit", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S3-9306-TEST"),
-    ("wrong_uplink", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S3-9306-TEST"),
-    ("swapped_transit", "TOPOLOGY_LINK_NOT_FOUND", "hops[1]", "S1-9306-TEST"),
-    ("wrong_pe", "TOPOLOGY_LINK_NOT_FOUND", "hops[1]", "S1-9306-TEST"),
-    ("disconnected", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S3-9306-TEST"),
+    ("vendor", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S1-CISCO-TEST"),
+    ("role", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S2-HUAWEI-TEST"),
+    ("address", "TOPOLOGY_NODE_ATTRIBUTE_MISMATCH", "hops[0]", "S1-CISCO-TEST"),
+    ("client_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[0].customer_port", "S1-CISCO-TEST"),
+    ("uplink_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[0].uplink_interface", "S1-CISCO-TEST"),
+    ("ingress_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[1].downstream_interface", "S2-HUAWEI-TEST"),
+    ("egress_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[1].upstream_interface", "S2-HUAWEI-TEST"),
+    ("pe_port", "TOPOLOGY_INTERFACE_NOT_FOUND", "hops[2].parent_interface", "PE2-HUAWEI-TEST"),
+    ("skipped_transit", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S1-CISCO-TEST"),
+    ("wrong_uplink", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S1-CISCO-TEST"),
+    ("swapped_transit", "TOPOLOGY_LINK_NOT_FOUND", "hops[1]", "S2-HUAWEI-TEST"),
+    ("wrong_pe", "TOPOLOGY_LINK_NOT_FOUND", "hops[1]", "S2-HUAWEI-TEST"),
+    ("disconnected", "TOPOLOGY_LINK_NOT_FOUND", "hops[0]", "S1-CISCO-TEST"),
 ))
 def test_inventory_defects_block_preflight_with_exact_location(
     kind: str, expected_code: str, field: str, node_id: str,
@@ -688,7 +688,7 @@ def test_inventory_defects_block_preflight_with_exact_location(
     elif kind == "vendor":
         intent = replace(intent, access=replace(intent.access, vendor="huawei"))
     elif kind == "role":
-        intent = replace(intent, access=replace(intent.access, node_id="S1-9306-TEST"), transits=())
+        intent = replace(intent, access=replace(intent.access, node_id="S2-HUAWEI-TEST"), transits=())
     elif kind == "address":
         intent = replace(intent, access=replace(intent.access, management_ip=IPv4Address("192.0.2.99")))
     elif kind in ("client_port", "uplink_port"):
@@ -768,7 +768,7 @@ def test_programmatic_client_port_checks_every_incident_link(
 ) -> None:
     """Bloquea cualquier troncal del acceso en ambos sentidos y permite un puerto libre."""
     topology = load_default_topology()
-    links = (*topology.links, TopologyLink("S3-9306-TEST", "Gi1/0/2", "S3-4505-TEST", "GE1/0/2"))
+    links = (*topology.links, TopologyLink("S1-CISCO-TEST", "Gi1/0/2", "S1-HUAWEI-TEST", "GE1/0/2"))
     if reverse_links:
         links = tuple(TopologyLink(link.target_node_id, link.target_interface, link.source_node_id, link.source_interface)
                       for link in reversed(links))

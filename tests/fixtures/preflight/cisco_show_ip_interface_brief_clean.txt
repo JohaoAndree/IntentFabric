@@ -1,2 +1,2 @@
 Interface              IP-Address      OK? Method Status                Protocol
-GigabitEthernet0/0/4    unassigned      YES NVRAM  administratively down down
+GigabitEthernet0/0/1    unassigned      YES NVRAM  administratively down down

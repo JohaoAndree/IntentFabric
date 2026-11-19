@@ -3,7 +3,7 @@ policy-map TEST_POLICY
   police rate 100000000 bps
  exit
 exit
-interface GigabitEthernet0/0/4.10
+interface GigabitEthernet0/0/1.10
  description TEST-0000000001
  encapsulation dot1Q 10
  vrf forwarding TEST-INTERNET

@@ -68,7 +68,8 @@ def abbreviate_interface_name(name: str, vendor: str) -> str:
         )
         if normalized.startswith(canonical) and normalized[len(canonical):len(canonical) + 1].isdigit():
             prefix = huawei_prefix if is_huawei else cisco_prefix
-            assert prefix is not None
+            if prefix is None:
+                raise InvalidInterfaceNameError(f"interface: prefijo desconocido en {name!r}")
             return prefix + normalized[len(canonical):]
     raise InvalidInterfaceNameError(f"interface: nombre invalido {name!r}")
 
