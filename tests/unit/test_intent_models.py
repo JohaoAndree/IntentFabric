@@ -84,10 +84,10 @@ def test_hops_normalize_all_interface_fields_and_wrap_invalid_names() -> None:
     """Normaliza cada atributo de interfaz y convierte errores al contrato ValueError."""
     access = AccessHop("access", "cisco", IPv4Address("192.0.2.1"), "Gi0/1", "GE0/2")
     transit = TransitHop("transit", "huawei", IPv4Address("192.0.2.2"), "GE0/1", "Gi0/2")
-    pe = ProviderEdgeHop("pe", "huawei", IPv4Address("192.0.2.3"), "GE0/1.10")
+    pe = ProviderEdgeHop("pe", "huawei", IPv4Address("192.0.2.3"), "GigabitEthernet0/1.10")
     assert (access.customer_port, access.uplink_interface) == ("GigabitEthernet0/1", "GigabitEthernet0/2")
-    assert (transit.downstream_interface, transit.upstream_interface) == ("GigabitEthernet0/1", "GigabitEthernet0/2")
-    assert pe.parent_interface == "GigabitEthernet0/1.10"
+    assert (transit.downstream_interface, transit.upstream_interface) == ("GE0/1", "GE0/2")
+    assert pe.parent_interface == "GE0/1.10"
     for hop, attributes in ((access, ("customer_port", "uplink_interface")),
                             (transit, ("downstream_interface", "upstream_interface")),
                             (pe, ("parent_interface",))):
