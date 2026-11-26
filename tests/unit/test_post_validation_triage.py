@@ -113,7 +113,7 @@ def _transport(
             command = f"show mpls l2transport vc {intent.pw_id}" if cisco else f"display mpls l2vc {intent.pw_id}"
             fixture_name = "cisco_show_mpls_l2transport_vc_up.txt" if cisco else "huawei_display_mpls_l2vc_up.txt"
         else:
-            command = "show l2vpn evpn vpws" if cisco else f"display bgp evpn evpl instance-id {intent.evi_id}"
+            command = f"show l2vpn evpn vpws evi {intent.evi_id} detail" if cisco else f"display bgp evpn evpl instance-id {intent.evi_id}"
             fixture_name = "cisco_show_l2vpn_evpn_vpws_up.txt" if cisco else "huawei_display_evpl_instance_up.txt"
         transport.set_show_output(pe.node_id, command, _fixture(fixture_name))
     else:
@@ -310,8 +310,13 @@ def test_l2vpn_queries_circuit_without_svi_or_mac_requirement(vendor: str, varia
     assert report.observed_state.mac_learned_nodes == ()
     assert all(record.mode == "show" for record in transport.history)
     assert report.steps[-1].commands_executed == transport.history[-1].commands
-    if vendor == "huawei" and variant in ("default", "evpn_vpws"):
-        assert transport.history[-1].commands == (f"display bgp evpn evpl instance-id {intent.evi_id}",)
+    if variant in ("default", "evpn_vpws"):
+        expected_command = (
+            f"show l2vpn evpn vpws evi {intent.evi_id} detail"
+            if vendor == "cisco"
+            else f"display bgp evpn evpl instance-id {intent.evi_id}"
+        )
+        assert transport.history[-1].commands == (expected_command,)
 
 
 @pytest.mark.parametrize("vendor", ["cisco", "huawei"])
@@ -379,7 +384,7 @@ def test_l2vpn_cascade_reports_exact_first_failed_node(
     if variant == "martini_ldp":
         circuit_command = f"show mpls l2transport vc {intent.pw_id}" if vendor == "cisco" else f"display mpls l2vc {intent.pw_id}"
     else:
-        circuit_command = ("show l2vpn evpn vpws" if vendor == "cisco"
+        circuit_command = (f"show l2vpn evpn vpws evi {intent.evi_id} detail" if vendor == "cisco"
                            else f"display bgp evpn evpl instance-id {intent.evi_id}")
     transport.set_show_output(pe.node_id, circuit_command, "")
     if failed_step == TriageStepName.PE_INTERFACE_STATE:

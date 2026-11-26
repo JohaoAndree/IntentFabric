@@ -382,5 +382,5 @@ class PostValidationTriageService:
         if variant == "martini_ldp":
             return (f"show mpls l2transport vc {intent.pw_id}" if node.vendor == "cisco"
                     else f"display mpls l2vc {intent.pw_id}")
-        return ("show l2vpn evpn vpws" if node.vendor == "cisco"
+        return (f"show l2vpn evpn vpws evi {intent.evi_id} detail" if node.vendor == "cisco"
                 else f"display bgp evpn evpl instance-id {intent.evi_id}")
