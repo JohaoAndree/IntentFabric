@@ -637,3 +637,49 @@ def test_dia_accepts_cisco_route_with_inherited_mask() -> None:
     assert report.status == ServiceOperationalStatus.OPERATIONAL and report.sdc == 1
     assert report.observed_state.control_plane_up and report.observed_state.svi_cleaned_up
     assert all(step.passed for step in report.steps)
+
+
+def test_cisco_lldp_parser_handles_truncated_device_id_and_wrapped_rows() -> None:
+    """Extrae Local Intf Cisco ante Device ID pegado, filas envueltas o sin Capability."""
+    pe1_output = (
+        "Capability codes:\n"
+        "    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n"
+        "    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\n"
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "S2-CISCO-TEST.intentGi0/0/1        120        B,R             Gi1/0/24\n"
+        "P-CORE-CISCO-TEST.inGi0/0/0        120        R               Gi0/0/0\n\n"
+        "Total entries displayed: 2\n"
+    )
+    assert parse_lldp_local_ports(pe1_output, "cisco") == frozenset({
+        "GigabitEthernet0/0/1", "GigabitEthernet0/0/0",
+    })
+    s2_output = (
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "S1-HUAWEI-TEST      Gi1/0/11       120        B,R             GE1/0/8\n"
+        "S2-HUAWEI-TEST      Gi1/0/23       120        B,R             GE1/0/21\n"
+        "PE1-CISCO-TEST.intenGi1/0/24       120        R               Gi0/0/1\n\n"
+        "Total entries displayed: 3\n"
+    )
+    assert parse_lldp_local_ports(s2_output, "cisco") == frozenset({
+        "GigabitEthernet1/0/11", "GigabitEthernet1/0/23", "GigabitEthernet1/0/24",
+    })
+    # Sin encabezado usa ancho 20; un Device ID terminado en "10" no debe contaminar Gi0/0/1 como 10Gi.
+    no_header_concatenated = "DEVICE-ID-0123456710Gi0/0/1        120        R               Gi1/0/24\n"
+    assert parse_lldp_local_ports(no_header_concatenated, "cisco") == frozenset({"GigabitEthernet0/0/1"})
+    wrapped_and_empty_capability = (
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "PE1-CISCO-TEST.intentfabric.local\n"
+        "                    Gi1/0/24       120        R               Gi0/0/1\n"
+        "SW-LAB              Gi1/0/10       150                        Gi1/0/24\n"
+        "PE1-CISCO-TEST.intenGi1/0/11       120                        Gi0/0/2\n"
+    )
+    assert parse_lldp_local_ports(wrapped_and_empty_capability, "cisco") == frozenset({
+        "GigabitEthernet1/0/24", "GigabitEthernet1/0/10", "GigabitEthernet1/0/11",
+    })
+    invalid_outputs = (
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "PE1-CISCO-TEST.intenBADPORT        120        R               Gi0/0/1\n"
+        "PE1-CISCO-TEST.intenGi1/0/24       hold       R               Gi0/0/1\n"
+        "Total entries displayed: 2\n"
+    )
+    assert parse_lldp_local_ports(invalid_outputs, "cisco") == frozenset()

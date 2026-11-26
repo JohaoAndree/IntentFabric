@@ -48,15 +48,40 @@ def parse_interface_is_up(output: str, vendor: str, interface_name: str) -> bool
     return False
 
 
+_CISCO_LLDP_DEVICE_ID_WIDTH = 20
+
+
+def _extract_cisco_lldp_port(line: str, columns: list[str], local_intf_col: int | None) -> str | None:
+    # Cisco IOS-XE trunca Device ID en columna fija y puede omitir el espacio antes de Local Intf.
+    if len(columns) >= 4 and columns[2].isdecimal():
+        return columns[1]
+    if len(columns) >= 3 and columns[1].isdecimal():
+        if line[:1].isspace():
+            return columns[0]
+        if local_intf_col is not None and len(line) > local_intf_col:
+            sliced = line[local_intf_col:].split()
+            if len(sliced) >= 3 and sliced[1].isdecimal():
+                return sliced[0]
+        if len(columns[0]) > _CISCO_LLDP_DEVICE_ID_WIDTH:
+            return columns[0][_CISCO_LLDP_DEVICE_ID_WIDTH:]
+        return columns[0]
+    return None
+
+
 def parse_lldp_local_ports(output: str, vendor: str) -> frozenset[str]:
     """Extrae puertos locales canonicos de filas de vecinos LLDP."""
     ports: set[str] = set()
+    local_intf_col: int | None = None
     for line in output.splitlines():
         columns = line.split()
         if vendor == "cisco":
-            if len(columns) < 5 or not columns[2].isdecimal():
+            lowered = line.lower()
+            if "device id" in lowered and "local intf" in lowered:
+                local_intf_col = lowered.index("local intf")
                 continue
-            candidate = columns[1]
+            candidate = _extract_cisco_lldp_port(line, columns, local_intf_col)
+            if candidate is None:
+                continue
         else:
             if len(columns) < 4 or not (columns[1].isdecimal() or columns[-1].isdecimal()):
                 continue
