@@ -7,7 +7,7 @@ evpl instance 310
  evpn binding vpn-instance VPWS_310
  local-service-id 3101 remote-service-id 3102
 quit
-traffic classifier QOS_L2VPN_100M_CLASS operator or
+traffic classifier QOS_L2VPN_100M_CLASS type or
  if-match any
 quit
 traffic behavior QOS_L2VPN_100M_BEHAVIOR

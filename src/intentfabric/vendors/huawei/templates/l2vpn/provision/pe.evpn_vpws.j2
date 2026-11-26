@@ -7,7 +7,7 @@ evpl instance {{ evi_id }}
  evpn binding vpn-instance {{ instance_name }}
  local-service-id {{ local_ac_id }} remote-service-id {{ remote_ac_id }}
 quit
-traffic classifier {{ qos_policy }}_CLASS operator or
+traffic classifier {{ qos_policy }}_CLASS type or
  if-match any
 quit
 traffic behavior {{ qos_policy }}_BEHAVIOR

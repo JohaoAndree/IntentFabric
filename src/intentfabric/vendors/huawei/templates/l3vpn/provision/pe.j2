@@ -6,7 +6,7 @@ ip vpn-instance {{ vrf_name }}
   vpn-target {{ rt_import }} import-extcommunity
  quit
 quit
-traffic classifier {{ qos_policy }}_CLASS operator or
+traffic classifier {{ qos_policy }}_CLASS type or
  if-match any
 quit
 traffic behavior {{ qos_policy }}_BEHAVIOR

@@ -1,4 +1,4 @@
-traffic classifier TEST_POLICY operator or
+traffic classifier TEST_POLICY type or
  if-match any
 quit
 traffic behavior TEST_POLICY

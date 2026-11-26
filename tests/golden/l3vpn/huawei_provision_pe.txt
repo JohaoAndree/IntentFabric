@@ -6,7 +6,7 @@ ip vpn-instance VRF_CORP_A
   vpn-target 65000:110 import-extcommunity
  quit
 quit
-traffic classifier QOS_L3VPN_100M_CLASS operator or
+traffic classifier QOS_L3VPN_100M_CLASS type or
  if-match any
 quit
 traffic behavior QOS_L3VPN_100M_BEHAVIOR
