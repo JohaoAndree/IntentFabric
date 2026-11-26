@@ -78,6 +78,8 @@ def parse_existing_interfaces(output: str, vendor: str) -> frozenset[str]:
         columns = line.split()
         if not columns:
             continue
+        if vendor == "cisco" and any(col.lower() == "deleted" for col in columns[1:]):
+            continue
         try:
             interface = normalize_interface_name(columns[0], vendor=vendor)
         except InvalidInterfaceNameError:

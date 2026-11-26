@@ -375,3 +375,21 @@ def test_transport_failure_aborts_preflight_without_configuring_any_node() -> No
     with pytest.raises(DeviceTransportError, match="lab offline"):
         build_online_preflight_checker(transport=transport).check_preflight(intent)
     assert transport.history == ()
+
+
+def test_cisco_existing_interfaces_ignores_deleted_subinterfaces() -> None:
+    """Omite filas deleted post-teardown y conserva subinterfaces activas o apagadas."""
+    deleted_output = (
+        "Interface              IP-Address      OK? Method Status                Protocol\n"
+        "GigabitEthernet0/0/1   10.0.0.1        YES NVRAM  up                    up\n"
+        "Gi0/0/1.310            unassigned      YES unset  deleted               down\n"
+    )
+    assert parse_existing_interfaces(deleted_output, "cisco") == frozenset({"GigabitEthernet0/0/1"})
+    active_output = deleted_output.replace("deleted               down", "up                    up")
+    assert parse_existing_interfaces(active_output, "cisco") == frozenset({
+        "GigabitEthernet0/0/1", "GigabitEthernet0/0/1.310",
+    })
+    admin_down_output = deleted_output.replace("deleted               down", "administratively down down")
+    assert parse_existing_interfaces(admin_down_output, "cisco") == frozenset({
+        "GigabitEthernet0/0/1", "GigabitEthernet0/0/1.310",
+    })
