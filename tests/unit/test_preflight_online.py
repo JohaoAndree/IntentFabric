@@ -127,7 +127,13 @@ def test_huawei_port_parser_matches_only_the_requested_interface() -> None:
 
 @pytest.mark.parametrize("original,replacement", [
     ("Administrative Mode: static access", "Administrative Mode: trunk"),
+    ("Administrative Mode: static access", "Administrative Mode: dynamic desirable"),
     ("Operational Mode: static access", "Operational Mode: trunk"),
+    (
+        "Administrative Mode: static access\nOperational Mode: static access",
+        "Administrative Mode: dynamic auto\nOperational Mode: trunk",
+    ),
+    ("Administrative Mode: static access\n", ""),
     ("Switchport: Enabled", "Switchport: Disabled"),
     ("Name: Gi1/0/1", "Name: Gi1/0/2"),
     ("Name: Gi1/0/1", "Name: invalid"),
@@ -145,14 +151,15 @@ def test_cisco_port_parser_rejects_unconfirmed_access_state(
 @pytest.mark.parametrize("mode_fields", [
     "Administrative Mode: static access\nOperational Mode: static access",
     "Administrative Mode: access\nOperational Mode: access",
+    "Administrative Mode: static access\nOperational Mode: down",
+    "Administrative Mode: dynamic auto\nOperational Mode: down",
     "Administrative Mode: static access",
-    "Operational Mode: access",
 ])
 @pytest.mark.parametrize("optional_fields", [True, False])
 def test_cisco_port_parser_accepts_equivalent_name_and_each_valid_access_mode(
     mode_fields: str, optional_fields: bool,
 ) -> None:
-    """Acepta al menos un modo access valido y permite omitir Name y Switchport."""
+    """Acepta modos access o down libres y permite omitir Name y Switchport."""
     output = _fixture("cisco_show_interfaces_switchport_free.txt").replace(
         "Administrative Mode: static access\nOperational Mode: static access", mode_fields,
     )
@@ -161,11 +168,61 @@ def test_cisco_port_parser_accepts_equivalent_name_and_each_valid_access_mode(
     assert parse_access_port_vlan(output, "cisco", "GigabitEthernet1/0/1") == 1
 
 
-@pytest.mark.parametrize("link_type", ["trunk", "hybrid"])
-def test_huawei_port_parser_rejects_non_access_link_type_with_pvid_one(link_type: str) -> None:
-    """Un PVID 1 no habilita puertos Huawei de tipo trunk o hybrid."""
-    output = _fixture("huawei_display_port_vlan_free.txt").replace("access", link_type)
-    assert parse_access_port_vlan(output, "huawei", "GE1/0/1") is None
+@pytest.mark.parametrize(("admin_mode", "vlan_line", "expected_vlan", "expected_busy"), [
+    ("static access", "Access Mode VLAN: 1 (default)", 1, False),
+    ("dynamic auto", "Access Mode VLAN: 1 (default)", 1, False),
+    ("static access", "Access Mode VLAN: 10 (VLAN0010)", 10, True),
+])
+def test_cisco_down_port_reports_free_only_when_assigned_to_vlan_one(
+    admin_mode: str, vlan_line: str, expected_vlan: int, expected_busy: bool,
+) -> None:
+    """Distingue un puerto Cisco down libre de otro down asignado a otra VLAN."""
+    output = (
+        _fixture("cisco_show_interfaces_switchport_free.txt")
+        .replace("Administrative Mode: static access", f"Administrative Mode: {admin_mode}")
+        .replace("Operational Mode: static access", "Operational Mode: down")
+        .replace("Access Mode VLAN: 1 (default)", vlan_line)
+    )
+    assert parse_access_port_vlan(output, "cisco", "Gi1/0/1") == expected_vlan
+    intent = _intent("dia", "huawei")
+    transport = _transport(intent)
+    transport.set_show_output(
+        intent.access.node_id, f"show interfaces {intent.access.customer_port} switchport", output,
+    )
+    issues = build_online_preflight_checker(transport=transport).check_preflight(intent)
+    if expected_busy:
+        assert [issue.code for issue in issues] == ["CLIENT_PORT_BUSY"]
+        assert f"ya pertenece a la VLAN {expected_vlan}" in issues[0].message
+    else:
+        assert issues == ()
+
+
+@pytest.mark.parametrize(("row", "expected_vlan"), [
+    ("GE1/0/1                  hybrid       1     --", 1),
+    ("GE1/0/1                  hybrid       1     10,20", None),
+    ("GE1/0/1                  hybrid       10    --", None),
+    ("GE1/0/1                  hybrid       1     -", None),
+    ("GE1/0/1                  trunk        1     56", None),
+    ("GE1/0/1                  trunk        1     -", None),
+])
+def test_huawei_port_parser_distinguishes_clean_hybrid_from_busy_ports(
+    row: str, expected_vlan: int | None,
+) -> None:
+    """Acepta hybrid limpio post-teardown con PVID 1 y '--', y rechaza trunk o hybrid ocupado."""
+    output = _fixture("huawei_display_port_vlan_free.txt").replace(
+        "GE1/0/1                  access       1     -", row,
+    )
+    assert parse_access_port_vlan(output, "huawei", "GE1/0/1") is expected_vlan
+    intent = _intent("dia", "cisco")
+    transport = _transport(intent)
+    transport.set_show_output(
+        intent.access.node_id, f"display port vlan {intent.access.customer_port}", output,
+    )
+    issues = build_online_preflight_checker(transport=transport).check_preflight(intent)
+    if expected_vlan == 1:
+        assert issues == ()
+    else:
+        assert [issue.code for issue in issues] == ["CLIENT_PORT_BUSY"]
 
 
 @pytest.mark.parametrize("service", _SERVICES)
