@@ -1,7 +1,6 @@
-no l2vpn xconnect context VPWS_410
-!
-no interface GigabitEthernet0/0/1.410
-!
-no policy-map QOS_L2VPN_200M
-!
+l2vpn evpn instance 410 point-to-point
+ no vpws context VPWS_410
+exit
 no l2vpn evpn instance 410 point-to-point
+no interface GigabitEthernet0/0/1.410
+no policy-map QOS_L2VPN_200M

@@ -1,4 +1,4 @@
-traffic classifier TEST_POLICY operator or
+traffic classifier TEST_POLICY type or
  if-match any
 quit
 traffic behavior TEST_POLICY
@@ -12,7 +12,6 @@ interface GE0/0/1.10
  dot1q termination vid 10
  ip binding vpn-instance TEST-INTERNET
  ip address 192.168.10.1 255.255.255.252
- arp broadcast enable
  traffic-policy TEST_POLICY inbound
  traffic-policy TEST_POLICY outbound
  undo shutdown

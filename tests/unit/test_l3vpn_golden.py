@@ -103,17 +103,19 @@ def test_access_mode_existing_trunk_vlan_propagation_and_native_pe_qos(
     assert f"interface {intent.access.uplink_interface}\n {access_trunk} {intent.vlan_id}\n" in access.rendered_text
     assert transit.rendered_text.count(f" {transit_trunk} {intent.vlan_id}\n") == 2
     if pe.vendor == "cisco":
-        assert "  police rate 200000000 bps peak-rate 200000000 bps\n" in pe.rendered_text
+        assert "  police rate 200000000 bps peak-rate 200000000 bps\n  exit\n exit\nexit\n" in pe.rendered_text
         assert "vrf definition VRF_CORP_A\n" in pe.rendered_text
         assert "router bgp 65000\n address-family ipv4 vrf VRF_CORP_A\n  redistribute connected\n" in pe.rendered_text
         assert "  neighbor 172.16.20.2 remote-as 65210\n" in pe.rendered_text
         assert "  neighbor 172.16.20.2 activate\n" in pe.rendered_text
     else:
         assert " car cir 100000 pir 100000\n" in pe.rendered_text
+        assert "arp broadcast enable" not in pe.rendered_text
         assert "ip vpn-instance VRF_CORP_A\n" in pe.rendered_text
         assert "bgp 65000\n ipv4-family vpn-instance VRF_CORP_A\n  import-route direct\n" in pe.rendered_text
         assert "  peer 172.16.10.2 as-number 65110\n" in pe.rendered_text
         assert f"traffic policy {intent.qos_policy_name}\n" in pe.rendered_text
+    assert all(line.strip() not in ("!", "#") for line in pe.rendered_text.splitlines())
     assert access.rendered_text.count(intent.description) == 2
     assert f" description {intent.description}\n" in pe.rendered_text
     teardown = generator.generate(intent, operation=Operation.TEARDOWN)
@@ -146,14 +148,15 @@ def test_teardown_removes_vrf_family_interface_and_qos_in_approved_order(
     """Retira familia BGP, subinterfaz, QoS y VRF en el orden aprobado."""
     intent = _reference_intent(access_node_id, pe_node_id)
     rendered = build_generator().generate(intent, operation=Operation.TEARDOWN).artifacts[-1].rendered_text
+    assert all(line.strip() not in ("!", "#") for line in rendered.splitlines())
     if intent.provider_edge.vendor == "cisco":
         removals = (
-            " no address-family ipv4 vrf VRF_CORP_A", "no interface GigabitEthernet0/0/1.210",
+            " no address-family ipv4 vrf VRF_CORP_A", "exit", "no interface GigabitEthernet0/0/1.210",
             "no policy-map QOS_L3VPN_200M", "no vrf definition VRF_CORP_A",
         )
     else:
         removals = (
-            " undo ipv4-family vpn-instance VRF_CORP_A", "undo interface GE0/0/1.110",
+            " undo ipv4-family vpn-instance VRF_CORP_A", "quit", "undo interface GE0/0/1.110",
             "undo traffic policy QOS_L3VPN_100M", "undo traffic behavior QOS_L3VPN_100M_BEHAVIOR",
             "undo traffic classifier QOS_L3VPN_100M_CLASS", "undo ip vpn-instance VRF_CORP_A",
         )

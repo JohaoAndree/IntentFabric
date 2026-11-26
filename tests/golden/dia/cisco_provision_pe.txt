@@ -1,6 +1,7 @@
 policy-map TEST_POLICY
  class class-default
   police rate 100000000 bps
+  exit
  exit
 exit
 interface GigabitEthernet0/0/1.10

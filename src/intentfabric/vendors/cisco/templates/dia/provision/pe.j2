@@ -1,6 +1,7 @@
 policy-map {{ qos_policy }}
  class class-default
   police rate {{ cir_bps }} bps
+  exit
  exit
 exit
 interface {{ pe_subinterface }}

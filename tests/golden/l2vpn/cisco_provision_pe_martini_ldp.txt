@@ -1,7 +1,9 @@
 policy-map QOS_L2VPN_200M
  class class-default
   police rate 200000000 bps peak-rate 200000000 bps
-!
+  exit
+ exit
+exit
 interface GigabitEthernet0/0/1.410
  description L2VPN-CORP-000002
  encapsulation dot1Q 410
@@ -9,3 +11,4 @@ interface GigabitEthernet0/0/1.410
  service-policy input QOS_L2VPN_200M
  service-policy output QOS_L2VPN_200M
  no shutdown
+exit

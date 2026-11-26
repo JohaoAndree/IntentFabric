@@ -29,7 +29,7 @@ def parse_active_vlans(output: str, vendor: str) -> frozenset[int]:
 
 
 def parse_access_port_vlan(output: str, vendor: str, interface_name: str) -> int | None:
-    """Extrae la VLAN o el PVID solo si la interfaz solicitada esta en modo access."""
+    """Extrae la VLAN o el PVID solo si la interfaz esta en modo access o limpia post-teardown."""
     if vendor == "cisco":
         names = re.findall(r"^[ \t]*Name:[ \t]*(.*)$", output, re.MULTILINE)
         try:
@@ -41,10 +41,14 @@ def parse_access_port_vlan(output: str, vendor: str, interface_name: str) -> int
         switchport_states = re.findall(r"^[ \t]*Switchport:[ \t]*(.*)$", output, re.MULTILINE)
         if any(state.strip().lower() != "enabled" for state in switchport_states):
             return None
-        modes = re.findall(
-            r"^[ \t]*(?:Administrative Mode|Operational Mode):[ \t]*(.*)$", output, re.MULTILINE,
-        )
-        if not modes or any(mode.strip().lower() not in ("static access", "access") for mode in modes):
+        admin_modes = re.findall(r"^[ \t]*Administrative Mode:[ \t]*(.*)$", output, re.MULTILINE)
+        if not admin_modes or any(
+            mode.strip().lower() not in ("static access", "access", "dynamic auto")
+            for mode in admin_modes
+        ):
+            return None
+        oper_modes = re.findall(r"^[ \t]*Operational Mode:[ \t]*(.*)$", output, re.MULTILINE)
+        if any(mode.strip().lower() not in ("static access", "access", "down") for mode in oper_modes):
             return None
         match = re.search(r"Access Mode VLAN:\s*(\d+)", output)
         return int(match.group(1)) if match is not None else None
@@ -57,7 +61,13 @@ def parse_access_port_vlan(output: str, vendor: str, interface_name: str) -> int
         except InvalidInterfaceNameError:
             continue
         if matches:
-            return int(columns[2]) if columns[1].lower() == "access" else None
+            link_type = columns[1].lower()
+            pvid = int(columns[2])
+            if link_type == "access":
+                return pvid
+            if link_type == "hybrid" and pvid == 1 and len(columns) == 4 and columns[3] == "--":
+                return pvid
+            return None
     return None
 
 
@@ -67,6 +77,8 @@ def parse_existing_interfaces(output: str, vendor: str) -> frozenset[str]:
     for line in output.splitlines():
         columns = line.split()
         if not columns:
+            continue
+        if vendor == "cisco" and any(col.lower() == "deleted" for col in columns[1:]):
             continue
         try:
             interface = normalize_interface_name(columns[0], vendor=vendor)

@@ -348,7 +348,7 @@ def _simulated_circuit_outputs(intent: L2VpnIntent, variant: str) -> dict[tuple[
             f"*client interface : {pe.parent_interface}.{intent.vlan_id}\nsession state : up\nVC state : up\nVC ID : {intent.pw_id}\n"
         )
     else:
-        command = ("show l2vpn evpn vpws" if pe.vendor == "cisco"
+        command = (f"show l2vpn evpn vpws evi {intent.evi_id} detail" if pe.vendor == "cisco"
                    else f"display bgp evpn evpl instance-id {intent.evi_id}")
         output = (
             f"EVPN instance: {intent.evi_id} (point-to-point)\nTotal VCs: 1\n"

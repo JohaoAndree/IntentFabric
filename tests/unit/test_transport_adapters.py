@@ -2,6 +2,7 @@
 
 from dataclasses import replace
 import builtins
+import re
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -9,6 +10,9 @@ import pytest
 
 from intentfabric.adapters import (
     NetmikoTransportAdapter, SimulatedTransportAdapter, load_credentials_from_env,
+)
+from intentfabric.adapters.netmiko_transport import (
+    _CISCO_CONFIG_ERROR_PATTERN, _HUAWEI_CONFIG_ERROR_PATTERN,
 )
 from intentfabric.bootstrap import load_default_topology
 from intentfabric.domain import (
@@ -48,7 +52,10 @@ def test_transport_commit_is_exclusive_to_vrpv8(node_id: str, override: OsFamily
     output, committed = adapter.push_configuration(node, commands)
     assert committed is expected
     assert output == ("configured\ncommitted\n" if expected else "configured\n")
-    connection.send_config_set.assert_called_once_with(list(commands), exit_config_mode=not expected)
+    expected_pattern = _CISCO_CONFIG_ERROR_PATTERN if node.vendor == "cisco" else _HUAWEI_CONFIG_ERROR_PATTERN
+    connection.send_config_set.assert_called_once_with(
+        list(commands), exit_config_mode=not expected, error_pattern=expected_pattern,
+    )
     assert connection.commit.call_count == int(expected)
     assert connection.exit_config_mode.call_count == int(expected)
     assert [call[0] for call in connection.method_calls] == (
@@ -273,3 +280,63 @@ def test_invalid_environment_credentials_fail_explicitly(overrides: dict[str, st
     assert caught.value.node_id == "env"
     with pytest.raises(DeviceTransportError, match="credenciales SSH ausentes"):
         load_credentials_from_env({})
+
+
+@pytest.mark.parametrize(("pattern", "samples"), [
+    (
+        _CISCO_CONFIG_ERROR_PATTERN,
+        (
+            "% Invalid input detected at '^' marker.",
+            "% invalid command",
+            "% Incomplete command.",
+            "% Ambiguous command:  \"show \"",
+            "% Unknown command or computer name, or unable to find computer address",
+            "% Error opening tftp://192.0.2.1/cfg",
+        ),
+    ),
+    (
+        _HUAWEI_CONFIG_ERROR_PATTERN,
+        (
+            "Error: Unrecognized command found at '^' position.",
+            "error: wrong parameter",
+            "Unrecognized command found at '^' position.",
+            "Wrong parameter found at '^' position.",
+            "Too many parameters found at '^' position.",
+            "Incomplete command found at '^' position.",
+        ),
+    ),
+])
+def test_netmiko_config_error_patterns_match_case_insensitively(
+    pattern: str, samples: tuple[str, ...],
+) -> None:
+    """Detecta los patrones fail-fast de Cisco y Huawei sin distinguir mayusculas."""
+    for sample in samples:
+        assert re.search(pattern, f"prompt#\n{sample}\nprompt#", flags=re.M)
+    assert re.search(pattern, "configured\ncommitted\n", flags=re.M) is None
+
+
+@pytest.mark.parametrize(("node_id", "override"), [
+    ("PE1-CISCO-TEST", None),
+    ("PE2-HUAWEI-TEST", None),
+    ("PE2-HUAWEI-TEST", OsFamily.HUAWEI_VRPV8),
+])
+def test_netmiko_wraps_config_invalid_exception_fail_fast(
+    node_id: str, override: OsFamily | None,
+) -> None:
+    """Traduce ConfigInvalidException a CliCommandRejectedError y omite commit."""
+    exceptions = pytest.importorskip("netmiko.exceptions")
+    adapter, factory, connection, node = _netmiko(node_id, override)
+    failure = exceptions.ConfigInvalidException(
+        "Invalid input detected at command: bad cmd, matched error: % Invalid\r\n",
+    )
+    connection.send_config_set.side_effect = failure
+    with pytest.raises(DeviceTransportError) as caught:
+        adapter.push_configuration(node, ("bad cmd",))
+    assert isinstance(caught.value, CliCommandRejectedError)
+    assert caught.value.__cause__ is failure
+    assert caught.value.node_id == node.node_id
+    assert caught.value.command == "bad cmd"
+    assert "\r" not in caught.value.raw_output
+    assert "Invalid input detected" in caught.value.raw_output
+    connection.commit.assert_not_called()
+    factory.return_value.__exit__.assert_called_once()

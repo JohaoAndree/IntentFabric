@@ -113,7 +113,7 @@ def _transport(
             command = f"show mpls l2transport vc {intent.pw_id}" if cisco else f"display mpls l2vc {intent.pw_id}"
             fixture_name = "cisco_show_mpls_l2transport_vc_up.txt" if cisco else "huawei_display_mpls_l2vc_up.txt"
         else:
-            command = "show l2vpn evpn vpws" if cisco else f"display bgp evpn evpl instance-id {intent.evi_id}"
+            command = f"show l2vpn evpn vpws evi {intent.evi_id} detail" if cisco else f"display bgp evpn evpl instance-id {intent.evi_id}"
             fixture_name = "cisco_show_l2vpn_evpn_vpws_up.txt" if cisco else "huawei_display_evpl_instance_up.txt"
         transport.set_show_output(pe.node_id, command, _fixture(fixture_name))
     else:
@@ -229,6 +229,7 @@ def test_l3_services_probe_and_cleanup_in_both_access_vendors(service: str, vend
     assert configurations[0].commands == build_ephemeral_svi_provision_commands(
         intent.access.vendor, intent.vlan_id, expected.svi_ip_address, expected.svi_netmask,
     )
+    assert configurations[0].commands[-1] == ("exit" if intent.access.vendor == "cisco" else "quit")
     assert configurations[1].commands == build_ephemeral_svi_teardown_commands(intent.access.vendor, intent.vlan_id)
     assert all(record.node_id == intent.access.node_id for record in configurations)
     repeat = validator.validate(intent)
@@ -309,8 +310,13 @@ def test_l2vpn_queries_circuit_without_svi_or_mac_requirement(vendor: str, varia
     assert report.observed_state.mac_learned_nodes == ()
     assert all(record.mode == "show" for record in transport.history)
     assert report.steps[-1].commands_executed == transport.history[-1].commands
-    if vendor == "huawei" and variant in ("default", "evpn_vpws"):
-        assert transport.history[-1].commands == (f"display bgp evpn evpl instance-id {intent.evi_id}",)
+    if variant in ("default", "evpn_vpws"):
+        expected_command = (
+            f"show l2vpn evpn vpws evi {intent.evi_id} detail"
+            if vendor == "cisco"
+            else f"display bgp evpn evpl instance-id {intent.evi_id}"
+        )
+        assert transport.history[-1].commands == (expected_command,)
 
 
 @pytest.mark.parametrize("vendor", ["cisco", "huawei"])
@@ -378,7 +384,7 @@ def test_l2vpn_cascade_reports_exact_first_failed_node(
     if variant == "martini_ldp":
         circuit_command = f"show mpls l2transport vc {intent.pw_id}" if vendor == "cisco" else f"display mpls l2vc {intent.pw_id}"
     else:
-        circuit_command = ("show l2vpn evpn vpws" if vendor == "cisco"
+        circuit_command = (f"show l2vpn evpn vpws evi {intent.evi_id} detail" if vendor == "cisco"
                            else f"display bgp evpn evpl instance-id {intent.evi_id}")
     transport.set_show_output(pe.node_id, circuit_command, "")
     if failed_step == TriageStepName.PE_INTERFACE_STATE:
@@ -631,3 +637,49 @@ def test_dia_accepts_cisco_route_with_inherited_mask() -> None:
     assert report.status == ServiceOperationalStatus.OPERATIONAL and report.sdc == 1
     assert report.observed_state.control_plane_up and report.observed_state.svi_cleaned_up
     assert all(step.passed for step in report.steps)
+
+
+def test_cisco_lldp_parser_handles_truncated_device_id_and_wrapped_rows() -> None:
+    """Extrae Local Intf Cisco ante Device ID pegado, filas envueltas o sin Capability."""
+    pe1_output = (
+        "Capability codes:\n"
+        "    (R) Router, (B) Bridge, (T) Telephone, (C) DOCSIS Cable Device\n"
+        "    (W) WLAN Access Point, (P) Repeater, (S) Station, (O) Other\n\n"
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "S2-CISCO-TEST.intentGi0/0/1        120        B,R             Gi1/0/24\n"
+        "P-CORE-CISCO-TEST.inGi0/0/0        120        R               Gi0/0/0\n\n"
+        "Total entries displayed: 2\n"
+    )
+    assert parse_lldp_local_ports(pe1_output, "cisco") == frozenset({
+        "GigabitEthernet0/0/1", "GigabitEthernet0/0/0",
+    })
+    s2_output = (
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "S1-HUAWEI-TEST      Gi1/0/11       120        B,R             GE1/0/8\n"
+        "S2-HUAWEI-TEST      Gi1/0/23       120        B,R             GE1/0/21\n"
+        "PE1-CISCO-TEST.intenGi1/0/24       120        R               Gi0/0/1\n\n"
+        "Total entries displayed: 3\n"
+    )
+    assert parse_lldp_local_ports(s2_output, "cisco") == frozenset({
+        "GigabitEthernet1/0/11", "GigabitEthernet1/0/23", "GigabitEthernet1/0/24",
+    })
+    # Sin encabezado usa ancho 20; un Device ID terminado en "10" no debe contaminar Gi0/0/1 como 10Gi.
+    no_header_concatenated = "DEVICE-ID-0123456710Gi0/0/1        120        R               Gi1/0/24\n"
+    assert parse_lldp_local_ports(no_header_concatenated, "cisco") == frozenset({"GigabitEthernet0/0/1"})
+    wrapped_and_empty_capability = (
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "PE1-CISCO-TEST.intentfabric.local\n"
+        "                    Gi1/0/24       120        R               Gi0/0/1\n"
+        "SW-LAB              Gi1/0/10       150                        Gi1/0/24\n"
+        "PE1-CISCO-TEST.intenGi1/0/11       120                        Gi0/0/2\n"
+    )
+    assert parse_lldp_local_ports(wrapped_and_empty_capability, "cisco") == frozenset({
+        "GigabitEthernet1/0/24", "GigabitEthernet1/0/10", "GigabitEthernet1/0/11",
+    })
+    invalid_outputs = (
+        "Device ID           Local Intf     Hold-time  Capability      Port ID\n"
+        "PE1-CISCO-TEST.intenBADPORT        120        R               Gi0/0/1\n"
+        "PE1-CISCO-TEST.intenGi1/0/24       hold       R               Gi0/0/1\n"
+        "Total entries displayed: 2\n"
+    )
+    assert parse_lldp_local_ports(invalid_outputs, "cisco") == frozenset()

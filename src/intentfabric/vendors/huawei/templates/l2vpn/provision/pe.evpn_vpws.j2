@@ -2,20 +2,20 @@ evpn vpn-instance {{ instance_name }} vpws
  route-distinguisher {{ rd }}
  vpn-target {{ rt_export }} export-extcommunity
  vpn-target {{ rt_import }} import-extcommunity
-#
+quit
 evpl instance {{ evi_id }}
  evpn binding vpn-instance {{ instance_name }}
  local-service-id {{ local_ac_id }} remote-service-id {{ remote_ac_id }}
-#
-traffic classifier {{ qos_policy }}_CLASS operator or
+quit
+traffic classifier {{ qos_policy }}_CLASS type or
  if-match any
-#
+quit
 traffic behavior {{ qos_policy }}_BEHAVIOR
  car cir {{ cir_kbps }} pir {{ pir_kbps }}
-#
+quit
 traffic policy {{ qos_policy }}
  classifier {{ qos_policy }}_CLASS behavior {{ qos_policy }}_BEHAVIOR
-#
+quit
 interface {{ pe_subinterface }}
  description {{ description }}
  dot1q termination vid {{ vlan_id }}
@@ -23,3 +23,4 @@ interface {{ pe_subinterface }}
  traffic-policy {{ qos_policy }} inbound
  traffic-policy {{ qos_policy }} outbound
  undo shutdown
+quit
