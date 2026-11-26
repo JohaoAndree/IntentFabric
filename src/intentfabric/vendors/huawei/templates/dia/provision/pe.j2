@@ -12,7 +12,6 @@ interface {{ pe_subinterface }}
  dot1q termination vid {{ vlan_id }}
  ip binding vpn-instance {{ vrf_name }}
  ip address {{ wan_pe_ip }} {{ wan_netmask }}
- arp broadcast enable
  traffic-policy {{ qos_policy }} inbound
  traffic-policy {{ qos_policy }} outbound
  undo shutdown

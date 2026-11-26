@@ -78,14 +78,16 @@ def test_huawei_access_derives_vlanif_and_variant_is_preserved() -> None:
     assert expected.variant == "lab"
 
 
-@pytest.mark.parametrize("vendor,interface,shutdown,remove", [
-    ("cisco", "Vlan210", " no shutdown", "no interface Vlan210"),
-    ("huawei", "Vlanif210", " undo shutdown", "undo interface Vlanif210"),
+@pytest.mark.parametrize("vendor,interface,shutdown,closing,remove", [
+    ("cisco", "Vlan210", " no shutdown", "exit", "no interface Vlan210"),
+    ("huawei", "Vlanif210", " undo shutdown", "quit", "undo interface Vlanif210"),
 ])
-def test_svi_commands_preserve_prescribed_syntax(vendor: str, interface: str, shutdown: str, remove: str) -> None:
+def test_svi_commands_preserve_prescribed_syntax(
+    vendor: str, interface: str, shutdown: str, closing: str, remove: str,
+) -> None:
     """Conserva sintaxis y orden exactos de creacion y eliminacion SVI."""
     assert build_ephemeral_svi_provision_commands(vendor, 210, "192.0.2.2", "255.255.255.252") == (
-        f"interface {interface}", " ip address 192.0.2.2 255.255.255.252", shutdown,
+        f"interface {interface}", " ip address 192.0.2.2 255.255.255.252", shutdown, closing,
     )
     assert build_ephemeral_svi_teardown_commands(vendor, 210) == (remove,)
 

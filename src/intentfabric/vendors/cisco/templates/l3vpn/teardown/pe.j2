@@ -1,8 +1,6 @@
 router bgp {{ pe_asn }}
  no address-family ipv4 vrf {{ vrf_name }}
-!
+exit
 no interface {{ pe_subinterface }}
-!
 no policy-map {{ qos_policy }}
-!
 no vrf definition {{ vrf_name }}

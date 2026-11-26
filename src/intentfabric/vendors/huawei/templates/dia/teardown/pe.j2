@@ -1,2 +1,5 @@
 undo ip route-static vpn-instance {{ vrf_name }} {{ lan_network_address }} {{ lan_netmask }} {{ wan_ce_ip }}
 undo interface {{ pe_subinterface }}
+undo traffic policy {{ qos_policy }}
+undo traffic behavior {{ qos_policy }}
+undo traffic classifier {{ qos_policy }}

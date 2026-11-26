@@ -229,6 +229,7 @@ def test_l3_services_probe_and_cleanup_in_both_access_vendors(service: str, vend
     assert configurations[0].commands == build_ephemeral_svi_provision_commands(
         intent.access.vendor, intent.vlan_id, expected.svi_ip_address, expected.svi_netmask,
     )
+    assert configurations[0].commands[-1] == ("exit" if intent.access.vendor == "cisco" else "quit")
     assert configurations[1].commands == build_ephemeral_svi_teardown_commands(intent.access.vendor, intent.vlan_id)
     assert all(record.node_id == intent.access.node_id for record in configurations)
     repeat = validator.validate(intent)

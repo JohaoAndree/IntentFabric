@@ -89,10 +89,11 @@ def test_access_mode_existing_trunk_vlan_propagation_and_native_pe_qos(
     assert f"interface {intent.access.uplink_interface}\n {access_trunk} {intent.vlan_id}\n" in access.rendered_text
     assert transit.rendered_text.count(f" {transit_trunk} {intent.vlan_id}\n") == 2
     if pe.vendor == "cisco":
-        assert "police rate 100000000 bps\n" in pe.rendered_text
+        assert "police rate 100000000 bps\n  exit\n exit\nexit\n" in pe.rendered_text
     else:
         assert " car cir 100000 pir 100000\n" in pe.rendered_text
         assert f"traffic policy {intent.qos_policy_name}\n" in pe.rendered_text
+        assert "arp broadcast enable" not in pe.rendered_text
     assert access.rendered_text.count(intent.description) == 2
     assert f" description {intent.description}\n" in pe.rendered_text
     teardown = generator.generate(intent, operation=Operation.TEARDOWN)
@@ -104,3 +105,19 @@ def test_access_mode_existing_trunk_vlan_propagation_and_native_pe_qos(
         assert artifact.rendered_text.count(f" {removal} {intent.vlan_id}\n") == index + 1
     assert " shutdown\n" in teardown.artifacts[0].rendered_text
     assert "shutdown" not in teardown.artifacts[1].rendered_text
+    pe_teardown = teardown.artifacts[-1].rendered_text
+    if pe.vendor == "cisco":
+        removals = (
+            f"no interface {intent.provider_edge.parent_interface}.{intent.vlan_id}",
+            f"no policy-map {intent.qos_policy_name}",
+        )
+    else:
+        pe_subif = pe.rendered_text.splitlines()[9].removeprefix("interface ")
+        removals = (
+            f"undo interface {pe_subif}",
+            f"undo traffic policy {intent.qos_policy_name}",
+            f"undo traffic behavior {intent.qos_policy_name}",
+            f"undo traffic classifier {intent.qos_policy_name}",
+        )
+    offsets = [pe_teardown.index(command + "\n") for command in removals]
+    assert offsets == sorted(offsets)

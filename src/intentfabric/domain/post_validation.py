@@ -99,9 +99,9 @@ def build_ephemeral_svi_provision_commands(
 ) -> tuple[str, ...]:
     """Construye los comandos prescritos para aprovisionar la sonda SVI."""
     if vendor == "cisco":
-        return (f"interface Vlan{vlan_id}", f" ip address {ip_address} {netmask}", " no shutdown")
+        return (f"interface Vlan{vlan_id}", f" ip address {ip_address} {netmask}", " no shutdown", "exit")
     if vendor == "huawei":
-        return (f"interface Vlanif{vlan_id}", f" ip address {ip_address} {netmask}", " undo shutdown")
+        return (f"interface Vlanif{vlan_id}", f" ip address {ip_address} {netmask}", " undo shutdown", "quit")
     raise UnsupportedCombinationError(f"vendor: fabricante no soportado {vendor!r}")
 
 

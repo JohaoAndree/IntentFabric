@@ -32,6 +32,30 @@ def load_credentials_from_env(
         raise DeviceTransportError(str(error), node_id="env") from error
 
 
+_CISCO_CONFIG_ERROR_PATTERN = r"(?i)(?:% Invalid|% Incomplete|% Ambiguous|% Unknown|% Error)"
+_HUAWEI_CONFIG_ERROR_PATTERN = (
+    r"(?i)(?:Error:|Unrecognized command|Wrong parameter|Too many parameters|Incomplete command)"
+)
+
+
+def _config_error_pattern(node: TopologyNode) -> str:
+    if node.os_family == OsFamily.CISCO_XE or node.vendor == "cisco":
+        return _CISCO_CONFIG_ERROR_PATTERN
+    if node.os_family in (OsFamily.HUAWEI_VRP, OsFamily.HUAWEI_VRPV8) or node.vendor == "huawei":
+        return _HUAWEI_CONFIG_ERROR_PATTERN
+    return ""
+
+
+def _config_invalid_error_types() -> tuple[type[Exception], ...]:
+    try:
+        from netmiko.exceptions import ConfigInvalidException
+    except ModuleNotFoundError as error:
+        if error.name != "netmiko":
+            raise
+        return ()
+    return (ConfigInvalidException,)
+
+
 def _transport_error_types() -> tuple[type[Exception], ...]:
     try:
         from netmiko.exceptions import NetmikoBaseException
@@ -101,7 +125,9 @@ class NetmikoTransportAdapter:
         try:
             with self._connect(node) as connection:
                 output = connection.send_config_set(
-                    list(commands), exit_config_mode=not committed,
+                    list(commands),
+                    exit_config_mode=not committed,
+                    error_pattern=_config_error_pattern(node),
                 ).replace("\r\n", "\n")
                 self._require_accepted(output, node, command_block)
                 if committed:
@@ -114,5 +140,10 @@ class NetmikoTransportAdapter:
                             error_line, node_id=node.node_id, command=command_block, raw_output=output,
                         )
                 return output, committed
+        except _config_invalid_error_types() as error:
+            detail = str(error).replace("\r\n", "\n")
+            raise CliCommandRejectedError(
+                detail, node_id=node.node_id, command=command_block, raw_output=detail,
+            ) from error
         except _transport_error_types() as error:
             raise DeviceTransportError(str(error), node_id=node.node_id, command=command_block) from error

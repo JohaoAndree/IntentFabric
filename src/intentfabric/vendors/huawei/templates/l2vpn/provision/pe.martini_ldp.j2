@@ -1,12 +1,12 @@
 traffic classifier {{ qos_policy }}_CLASS operator or
  if-match any
-#
+quit
 traffic behavior {{ qos_policy }}_BEHAVIOR
  car cir {{ cir_kbps }} pir {{ pir_kbps }}
-#
+quit
 traffic policy {{ qos_policy }}
  classifier {{ qos_policy }}_CLASS behavior {{ qos_policy }}_BEHAVIOR
-#
+quit
 interface {{ pe_subinterface }}
  description {{ description }}
  dot1q termination vid {{ vlan_id }}
@@ -14,3 +14,4 @@ interface {{ pe_subinterface }}
  traffic-policy {{ qos_policy }} inbound
  traffic-policy {{ qos_policy }} outbound
  undo shutdown
+quit

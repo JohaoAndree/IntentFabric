@@ -126,11 +126,25 @@ def test_pe_uses_variant_signaling_and_decimal_qos_without_customer_ip(
     intent = _reference_intent(access_node_id, pe_node_id)
     catalog = build_plugin_catalog()
     context = catalog.build_hop_context(intent, 2, Operation.PROVISION)
-    text = build_generator(catalog).generate(intent, variant=variant).artifacts[-1].rendered_text
+    generator = build_generator(catalog)
+    text = generator.generate(intent, variant=variant).artifacts[-1].rendered_text
+    teardown_text = generator.generate(intent, operation=Operation.TEARDOWN, variant=variant).artifacts[-1].rendered_text
+    assert all(line.strip() not in ("!", "#") for line in text.splitlines())
+    assert all(line.strip() not in ("!", "#") for line in teardown_text.splitlines())
     if intent.provider_edge.vendor == "cisco":
         assert context["cir_bps"] == context["pir_bps"] == 200000000
-        assert "  police rate 200000000 bps peak-rate 200000000 bps\n" in text
-        signaling = " xconnect 10.255.0.2 410 encapsulation mpls\n" if variant == "martini_ldp" else "  service target 3101 source 3102\n"
+        assert "  police rate 200000000 bps peak-rate 200000000 bps\n  exit\n exit\nexit\n" in text
+        signaling = " xconnect 10.255.0.2 410 encapsulation mpls\n" if variant == "martini_ldp" else "  service target 3101 source 3102\n  member GigabitEthernet0/0/1.410\n"
+        if variant != "martini_ldp":
+            assert "l2vpn xconnect context" not in text
+            assert teardown_text.splitlines() == [
+                "l2vpn evpn instance 410 point-to-point",
+                " no vpws context VPWS_410",
+                "exit",
+                "no l2vpn evpn instance 410 point-to-point",
+                "no interface GigabitEthernet0/0/1.410",
+                "no policy-map QOS_L2VPN_200M",
+            ]
     else:
         assert context["cir_kbps"] == context["pir_kbps"] == 100000
         assert " car cir 100000 pir 100000\n" in text
